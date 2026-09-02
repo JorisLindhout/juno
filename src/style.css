@@ -1,0 +1,57 @@
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #1f1b17;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#view {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+#gate {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  background: rgba(18, 16, 14, 0.42);
+  color: #e8dcc8;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+  z-index: 2;
+}
+
+#gate[hidden] {
+  display: none;
+}
+
+#gate .title {
+  margin: 0;
+  font-size: 1.4rem;
+  font-weight: 500;
+  text-transform: lowercase;
+}
+
+#gate .hint {
+  margin: 0;
+  font-size: 0.72rem;
+  opacity: 0.65;
+  text-transform: lowercase;
+}
