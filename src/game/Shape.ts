@@ -104,11 +104,11 @@ export class Shape {
     return Math.hypot(v.x, v.y, v.z);
   }
 
-  keepMoving(minSpeed: number, rng: () => number): void {
+  keepMoving(minSpeed: number, rng: () => number, driftXy = true): void {
     this.body.wakeUp();
     const v = this.body.linvel();
     const xy = Math.hypot(v.x, v.y);
-    if (xy < minSpeed) {
+    if (driftXy && xy < minSpeed) {
       if (xy < 0.08) {
         const dir = new Vector3(rng() - 0.5, rng() - 0.5, 0);
         if (dir.lengthSq() < 1e-6) dir.set(1, 0.2, 0);

@@ -10,14 +10,14 @@ if (!(canvas instanceof HTMLCanvasElement) || !(gate instanceof HTMLElement)) {
 const game = await Game.create(canvas);
 game.startLoop();
 
-const begin = (e: Event) => {
-  e.preventDefault();
-  gate.setAttribute('hidden', '');
-  gate.removeEventListener('pointerdown', begin);
-  gate.removeEventListener('touchstart', begin);
-  gate.removeEventListener('click', begin);
-  void game.unlock();
-};
-gate.addEventListener('pointerdown', begin);
-gate.addEventListener('touchstart', begin, { passive: false });
-gate.addEventListener('click', begin);
+// iOS DeviceOrientationEvent.requestPermission() only presents a dialog
+// from a click (Autobahn does the same). preventDefault on touchstart
+// would cancel that click and silently skip the prompt.
+gate.addEventListener(
+  'click',
+  () => {
+    gate.setAttribute('hidden', '');
+    void game.unlock();
+  },
+  { once: true },
+);

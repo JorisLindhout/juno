@@ -112,17 +112,17 @@ export class Stage {
     return this.bounds;
   }
 
-  look(dt: number, betaDeg: number, gammaDeg: number): void {
+  look(dt: number, tiltX: number, tiltY: number): void {
     const k = Math.min(1, dt * 6);
     this.peekX += (this.peekAimX - this.peekX) * k;
     this.peekY += (this.peekAimY - this.peekY) * k;
     this.idleT += dt;
     const idleX = Math.sin(this.idleT * 0.17) * 0.14;
     const idleY = Math.cos(this.idleT * 0.13) * 0.1;
-    const gx = (gammaDeg * Math.PI) / 180;
-    const gy = (betaDeg * Math.PI) / 180;
-    this.camera.position.x = Math.sin(gx * 0.22) * 0.75 + this.peekX * 0.62 + idleX;
-    this.camera.position.y = Math.sin(gy * 0.22) * 0.75 + this.peekY * 0.48 + idleY;
+    const gx = Math.min(1, Math.max(-1, tiltX / 26));
+    const gy = Math.min(1, Math.max(-1, tiltY / 26));
+    this.camera.position.x = gx * 0.95 + this.peekX * 0.62 + idleX;
+    this.camera.position.y = -gy * 0.85 + this.peekY * 0.48 + idleY;
     this.camera.position.z = CAMERA_Z;
     this.camera.lookAt(0, 0, -this.bounds.halfD * 0.22);
   }

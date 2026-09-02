@@ -100,7 +100,8 @@ export class Game {
   async unlock(): Promise<void> {
     if (this.unlocking) return;
     this.unlocking = true;
-    await Promise.all([this.hits.unlock(), this.gyro.unlock()]);
+    await this.gyro.unlock();
+    await this.hits.unlock();
     this.pointers.enabled = true;
   }
 
@@ -184,7 +185,7 @@ export class Game {
     this.world.gravity.x = g.x;
     this.world.gravity.y = g.y;
     this.world.gravity.z = g.z;
-    this.stage.look(elapsed, this.gyro.beta, this.gyro.gamma);
+    this.stage.look(elapsed, this.gyro.tiltX, this.gyro.tiltY);
 
     let steps = 0;
     while (this.acc >= this.dt && steps < 2) {
@@ -197,7 +198,7 @@ export class Game {
     const minSpeed = Math.min(this.stage.bounds.halfW, this.stage.bounds.halfH) * MIN_SPEED_FRAC;
     const halfD = this.stage.bounds.halfD;
     for (const s of this.shapes) {
-      s.keepMoving(minSpeed, this.rng);
+      s.keepMoving(minSpeed, this.rng, Math.hypot(g.x, g.y) < GRAVITY * 0.14);
       s.updateVisual(now, elapsed, this.flashes);
       s.sync();
       s.cueDepth(halfD);
