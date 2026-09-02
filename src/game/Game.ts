@@ -61,6 +61,7 @@ export class Game {
   private acc = 0;
   private readonly dt = 1 / 60;
   private paused = false;
+  private unlocking = false;
 
   private constructor(canvas: HTMLCanvasElement, world: World) {
     this.world = world;
@@ -97,8 +98,9 @@ export class Game {
   }
 
   async unlock(): Promise<void> {
-    await this.hits.unlock();
-    await this.gyro.unlock();
+    if (this.unlocking) return;
+    this.unlocking = true;
+    await Promise.all([this.hits.unlock(), this.gyro.unlock()]);
     this.pointers.enabled = true;
   }
 
@@ -108,7 +110,10 @@ export class Game {
     window.visualViewport?.addEventListener('resize', onResize);
     document.addEventListener('visibilitychange', () => {
       this.paused = document.hidden;
-      if (!document.hidden) this.last = performance.now();
+      if (!document.hidden) {
+        this.last = performance.now();
+        void this.hits.resume();
+      }
     });
   }
 

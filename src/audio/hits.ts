@@ -46,10 +46,20 @@ export class Hits {
   }
 
   async unlock(): Promise<void> {
+    // iOS 17+: playback session must be set before creating the context,
+    // otherwise the hardware mute switch swallows Web Audio.
+    setPlaybackSession();
     if (!this.ctx) this.build();
     if (!this.ctx) return;
+    primeOutput(this.ctx);
     if (this.ctx.state === 'suspended') await this.ctx.resume();
     this.unlocked = true;
+  }
+
+  async resume(): Promise<void> {
+    if (!this.unlocked || !this.ctx) return;
+    setPlaybackSession();
+    if (this.ctx.state === 'suspended') await this.ctx.resume();
   }
 
   beginBurst(): void {
@@ -58,6 +68,10 @@ export class Hits {
 
   trigger(params: HitParams): void {
     if (!this.unlocked || !this.ctx || !this.master || !this.noise) return;
+    if (this.ctx.state === 'suspended') {
+      void this.resume();
+      return;
+    }
     if (this.burst >= this.burstMax || this.live >= this.maxLive) return;
 
     const mapped = mapHit(params, this.lite);
@@ -375,6 +389,31 @@ function finish(last: AudioScheduledSourceNode, nodes: AudioNode[], done: () => 
     }
     done();
   };
+}
+
+function setPlaybackSession(): void {
+  const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession;
+  if (!session) return;
+  try {
+    session.type = 'playback';
+  } catch {
+    /* Safari without Audio Session API */
+  }
+}
+
+// 1-sample silent buffer + HTML5 Audio tick: iOS will not route Web Audio
+// until something has actually played inside a user gesture.
+function primeOutput(ctx: AudioContext): void {
+  const buffer = ctx.createBuffer(1, 1, ctx.sampleRate);
+  const source = ctx.createBufferSource();
+  source.buffer = buffer;
+  source.connect(ctx.destination);
+  source.start(0);
+
+  const tick = new Audio(
+    'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA',
+  );
+  void tick.play().catch(() => {});
 }
 
 function makeNoise(ctx: AudioContext): AudioBuffer {
