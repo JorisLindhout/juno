@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "postinstall": "node --input-type=module -e \"if (process.env.WORKERS_CI === '1') { const { execSync } = await import('node:child_process'); execSync('npm run build', { stdio: 'inherit' }); }\""
   },
   "devDependencies": {
     "@types/three": "^0.185.4",
