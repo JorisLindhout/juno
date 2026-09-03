@@ -20,11 +20,22 @@ export type HitParams = {
   mass: number;
   depthT?: number;
   deeper?: boolean;
+  generation?: number;
 };
 
-type Family = 'kick' | 'tom' | 'rim' | 'cowbell' | 'hat' | 'bell';
+type Family = 'kick' | 'tom' | 'rim' | 'cowbell' | 'hat' | 'bell' | 'wood' | 'thud';
 
-const SEMIS = [0, 3, 5, 7, 10];
+const YOUNG: Family[] = ['rim', 'hat', 'bell'];
+const MID: Family[] = ['wood', 'tom', 'cowbell'];
+const OLD: Family[] = ['thud', 'kick', 'tom'];
+
+const SCALES = [
+  [0, 4, 7, 11, 14],
+  [0, 3, 5, 7, 10],
+  [0, 2, 3, 5, 7],
+];
+
+const REGISTER = [1.12, 1, 0.82];
 
 export class Hits {
   private ctx: AudioContext | null = null;
@@ -119,8 +130,15 @@ export class Hits {
       case 'hat':
         this.hat(now, mapped, done, bus);
         break;
-      default:
+      case 'bell':
         this.bell(now, mapped, done, bus);
+        break;
+      case 'wood':
+        this.wood(now, mapped, done, bus);
+        break;
+      case 'thud':
+        this.thud(now, mapped, done, bus);
+        break;
     }
   }
 
@@ -330,6 +348,74 @@ export class Hits {
     o2.stop(now + decay + 0.05);
     finish(o1, [o1, o2, g1, g2], done);
   }
+
+  private wood(now: number, p: Mapped, done: () => void, dest: AudioNode): void {
+    const ctx = this.ctx!;
+    const f = (720 + p.sizeNorm * 520) * p.hueMul;
+    const decay = 0.055 + p.sizeNorm * 0.04;
+
+    const src = ctx.createBufferSource();
+    src.buffer = this.noise!;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = f;
+    bp.Q.value = 3.2 + p.bright * 1.4;
+    const ng = ctx.createGain();
+    env(ng.gain, now, p.loud * 0.42, decay);
+    src.connect(bp).connect(ng).connect(dest);
+    src.start(now);
+    src.stop(now + decay + 0.03);
+
+    const nodes: AudioNode[] = [src, bp, ng];
+    if (!this.lite) {
+      const tick = ctx.createOscillator();
+      tick.type = 'triangle';
+      tick.frequency.setValueAtTime(f * 1.35, now);
+      const tg = ctx.createGain();
+      env(tg.gain, now, p.loud * 0.16, decay * 0.55);
+      tick.connect(tg).connect(dest);
+      tick.start(now);
+      tick.stop(now + decay + 0.02);
+      nodes.push(tick, tg);
+    }
+    finish(src, nodes, done);
+  }
+
+  private thud(now: number, p: Mapped, done: () => void, dest: AudioNode): void {
+    const ctx = this.ctx!;
+    const start = (72 + p.sizeNorm * 50) * p.hueMul;
+    const end = (26 + p.sizeNorm * 16) * p.hueMul;
+    const decay = 0.2 + (1 - p.sizeNorm) * 0.22 + p.mass * 0.01;
+
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(start, now);
+    osc.frequency.exponentialRampToValueAtTime(Math.max(end, 20), now + 0.08);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 280 + p.bright * 220;
+    const g = ctx.createGain();
+    env(g.gain, now, p.loud * 0.85, decay);
+    osc.connect(lp).connect(g).connect(dest);
+    osc.start(now);
+    osc.stop(now + decay + 0.04);
+
+    const nodes: AudioNode[] = [osc, lp, g];
+    if (!this.lite) {
+      const src = ctx.createBufferSource();
+      src.buffer = this.noise!;
+      const nlp = ctx.createBiquadFilter();
+      nlp.type = 'lowpass';
+      nlp.frequency.value = 180 + p.sizeNorm * 80;
+      const ng = ctx.createGain();
+      env(ng.gain, now, p.loud * 0.18, 0.05);
+      src.connect(nlp).connect(ng).connect(dest);
+      src.start(now);
+      src.stop(now + 0.06);
+      nodes.push(src, nlp, ng);
+    }
+    finish(osc, nodes, done);
+  }
 }
 
 type Mapped = {
@@ -350,10 +436,12 @@ function mapHit(params: HitParams, lite: boolean): Mapped {
   const C = clamp01((params.color.C - OKLCH_C_MIN) / (OKLCH_C_MAX - OKLCH_C_MIN));
   const bright = L * 0.55 + C * 0.45;
   let axis = clamp01(sizeNorm * 0.58 + bright * 0.42);
-  if (params.deeper) axis = axis * 0.32 + 0.04;
-  const family = pickFamily(axis);
-  const degree = Math.floor(((params.color.h % 360) / 360) * SEMIS.length);
-  const hueMul = 2 ** (SEMIS[degree] / 12);
+  if (params.deeper) axis *= 0.42;
+  const band = bandOf(params.generation ?? 0);
+  const family = pickFamily(axis, band);
+  const scale = SCALES[band];
+  const degree = Math.floor(((params.color.h % 360) / 360) * scale.length);
+  const hueMul = REGISTER[band] * 2 ** (scale[degree] / 12);
   const speed = Math.min(Math.max(params.speed, 0), 14);
   const depthT = clamp01(params.depthT ?? 1);
   const loud =
@@ -362,13 +450,16 @@ function mapHit(params: HitParams, lite: boolean): Mapped {
   return { family, sizeNorm, bright, hueMul, loud, echo, mass: Math.min(params.mass, 4) };
 }
 
-function pickFamily(axis: number): Family {
-  if (axis < 0.18) return 'kick';
-  if (axis < 0.36) return 'tom';
-  if (axis < 0.54) return 'rim';
-  if (axis < 0.72) return 'cowbell';
-  if (axis < 0.88) return 'hat';
-  return 'bell';
+function bandOf(generation: number): 0 | 1 | 2 {
+  if (generation <= 0) return 0;
+  if (generation === 1) return 1;
+  return 2;
+}
+
+function pickFamily(axis: number, band: 0 | 1 | 2): Family {
+  const palette = band === 0 ? YOUNG : band === 1 ? MID : OLD;
+  const i = Math.min(palette.length - 1, Math.floor(clamp01(axis) * palette.length));
+  return palette[i];
 }
 
 function env(param: AudioParam, now: number, peak: number, decay: number): void {

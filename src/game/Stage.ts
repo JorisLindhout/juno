@@ -64,7 +64,7 @@ export class Stage {
     this.fog = new Fog(SCENE_BG, 6, 12);
     this.scene.fog = this.fog;
 
-    this.hemi = new HemisphereLight(0xc9b59a, 0x2a241f, 0.32);
+    this.hemi = new HemisphereLight(0xc9b59a, 0x121218, 0.32);
     this.scene.add(this.hemi);
 
     this.lamp = new PointLight(0xfff2e0, 3.2, 10, 2);
@@ -101,8 +101,8 @@ export class Stage {
 
     const front = CAMERA_Z - halfD;
     const back = CAMERA_Z + halfD;
-    this.fog.near = front + halfD * 0.35;
-    this.fog.far = back + halfD * 0.85;
+    this.fog.near = front + halfD * 0.55;
+    this.fog.far = back + halfD * 1.4;
 
     this.lamp.position.set(0.25, 0.85, halfD + 0.45);
     this.lamp.distance = halfD * 3.6 + 2.4;
@@ -112,17 +112,19 @@ export class Stage {
     return this.bounds;
   }
 
-  look(dt: number, tiltX: number, tiltY: number): void {
+  look(dt: number, pourX: number, pourY: number): void {
     const k = Math.min(1, dt * 6);
     this.peekX += (this.peekAimX - this.peekX) * k;
     this.peekY += (this.peekAimY - this.peekY) * k;
     this.idleT += dt;
-    const idleX = Math.sin(this.idleT * 0.17) * 0.14;
-    const idleY = Math.cos(this.idleT * 0.13) * 0.1;
-    const gx = Math.min(1, Math.max(-1, tiltX / 26));
-    const gy = Math.min(1, Math.max(-1, tiltY / 26));
-    this.camera.position.x = gx * 0.95 + this.peekX * 0.62 + idleX;
-    this.camera.position.y = -gy * 0.85 + this.peekY * 0.48 + idleY;
+    const pour = Math.min(1, Math.hypot(pourX, pourY));
+    const idle = 1 - pour * 0.85;
+    const idleX = Math.sin(this.idleT * 0.17) * 0.14 * idle;
+    const idleY = Math.cos(this.idleT * 0.13) * 0.1 * idle;
+    const gx = Math.min(1.5, Math.max(-1.5, pourX));
+    const gy = Math.min(1.5, Math.max(-1.5, pourY));
+    this.camera.position.x = gx * 1.25 + this.peekX * 0.5 + idleX;
+    this.camera.position.y = gy * 1.1 + this.peekY * 0.4 + idleY;
     this.camera.position.z = CAMERA_Z;
     this.camera.lookAt(0, 0, -this.bounds.halfD * 0.22);
   }
@@ -131,7 +133,7 @@ export class Stage {
     this.accentHue = (this.accentHue + dt * 1.4) % 360;
     const t = this.accentHue / 360;
     this.hemi.color.setHSL(t, 0.16, 0.62);
-    this.hemi.groundColor.setHSL((t + 0.08) % 1, 0.1, 0.16);
+    this.hemi.groundColor.setHSL((t + 0.08) % 1, 0.08, 0.08);
   }
 
   render(): void {

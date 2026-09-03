@@ -26,16 +26,16 @@ export const PIXEL_RATIO_DESKTOP = 2;
 export const FPS_LOW = 40;
 export const FPS_HIGH = 55;
 
-export const GRAVITY = 5.6;
+export const GRAVITY = 7.4;
 export const CAMERA_FOV = 48;
 export const CAMERA_Z = 8;
 
-export const OKLCH_L_MIN = 0.52;
-export const OKLCH_L_MAX = 0.84;
-export const OKLCH_C_MIN = 0.09;
-export const OKLCH_C_MAX = 0.2;
+export const OKLCH_L_MIN = 0.58;
+export const OKLCH_L_MAX = 0.74;
+export const OKLCH_C_MIN = 0.18;
+export const OKLCH_C_MAX = 0.32;
 
-export const SCENE_BG = 0x1f1b17;
+export const SCENE_BG = 0x0c0c10;
 
 export function isMobile(): boolean {
   return (

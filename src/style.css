@@ -9,7 +9,7 @@ body {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: #1f1b17;
+  background: #0c0c10;
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
@@ -30,8 +30,8 @@ body {
   align-items: center;
   justify-content: center;
   gap: 0.6rem;
-  background: rgba(18, 16, 14, 0.42);
-  color: #e8dcc8;
+  background: rgba(8, 8, 12, 0.5);
+  color: #e8e6f0;
   font-family: ui-sans-serif, system-ui, sans-serif;
   letter-spacing: 0.12em;
   cursor: pointer;
