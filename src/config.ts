@@ -65,5 +65,5 @@ export function generationT(generation: number): number {
 }
 
 export function generationSpeedMul(generation: number): number {
-  return 1.28 - 0.73 * generationT(generation);
+  return 1.42 - 0.94 * generationT(generation);
 }

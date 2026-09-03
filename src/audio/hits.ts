@@ -11,6 +11,9 @@ import {
   isMobile,
 } from '../config';
 
+export type HitSurface = 'shape' | 'wall' | 'pointer';
+export type HitKind = 'bounce' | 'merge' | 'vertexLoss';
+
 export type HitParams = {
   size: number;
   sizeMin: number;
@@ -21,6 +24,9 @@ export type HitParams = {
   depthT?: number;
   deeper?: boolean;
   generation?: number;
+  surface?: HitSurface;
+  kind?: HitKind;
+  degreeShift?: number;
 };
 
 type Family = 'kick' | 'tom' | 'rim' | 'cowbell' | 'hat' | 'bell' | 'wood' | 'thud';
@@ -114,6 +120,11 @@ export class Hits {
       this.live = Math.max(0, this.live - 1);
     };
 
+    if (params.kind === 'vertexLoss') {
+      this.click(now, mapped, done, bus);
+      return;
+    }
+
     switch (mapped.family) {
       case 'kick':
         this.kick(now, mapped, done, bus);
@@ -180,7 +191,7 @@ export class Hits {
     const ctx = this.ctx!;
     const start = (110 + p.sizeNorm * 90) * p.hueMul;
     const end = (38 + p.sizeNorm * 28) * p.hueMul;
-    const decay = 0.22 + (1 - p.sizeNorm) * 0.28 + p.mass * 0.012;
+    const decay = (0.22 + (1 - p.sizeNorm) * 0.28 + p.mass * 0.012) * p.decayMul;
 
     const osc = ctx.createOscillator();
     osc.type = 'sine';
@@ -209,7 +220,7 @@ export class Hits {
     const ctx = this.ctx!;
     const start = (160 + p.sizeNorm * 140) * p.hueMul;
     const end = start * 0.52;
-    const decay = 0.16 + (1 - p.sizeNorm) * 0.16;
+    const decay = (0.16 + (1 - p.sizeNorm) * 0.16) * p.decayMul;
 
     const osc = ctx.createOscillator();
     osc.type = 'sine';
@@ -269,7 +280,7 @@ export class Hits {
     const ctx = this.ctx!;
     const a = (480 + p.sizeNorm * 280) * p.hueMul;
     const b = a * 1.48;
-    const decay = 0.09 + p.sizeNorm * 0.08;
+    const decay = (0.09 + p.sizeNorm * 0.08) * p.decayMul;
 
     const bp = ctx.createBiquadFilter();
     bp.type = 'bandpass';
@@ -326,7 +337,7 @@ export class Hits {
   private bell(now: number, p: Mapped, done: () => void, dest: AudioNode): void {
     const ctx = this.ctx!;
     const f = (1500 + p.sizeNorm * 1700) * p.hueMul;
-    const decay = 0.28 + p.sizeNorm * 0.22;
+    const decay = (0.28 + p.sizeNorm * 0.22) * p.decayMul;
 
     const o1 = ctx.createOscillator();
     o1.type = 'sine';
@@ -385,7 +396,7 @@ export class Hits {
     const ctx = this.ctx!;
     const start = (72 + p.sizeNorm * 50) * p.hueMul;
     const end = (26 + p.sizeNorm * 16) * p.hueMul;
-    const decay = 0.2 + (1 - p.sizeNorm) * 0.22 + p.mass * 0.01;
+    const decay = (0.2 + (1 - p.sizeNorm) * 0.22 + p.mass * 0.01) * p.decayMul;
 
     const osc = ctx.createOscillator();
     osc.type = 'sine';
@@ -416,6 +427,25 @@ export class Hits {
     }
     finish(osc, nodes, done);
   }
+
+  private click(now: number, p: Mapped, done: () => void, dest: AudioNode): void {
+    const ctx = this.ctx!;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noise!;
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 2400 + p.bright * 1800;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 1800 + p.sizeNorm * 900;
+    bp.Q.value = 1.6;
+    const g = ctx.createGain();
+    env(g.gain, now, p.loud * 0.38, 0.032);
+    src.connect(hp).connect(bp).connect(g).connect(dest);
+    src.start(now);
+    src.stop(now + 0.045);
+    finish(src, [src, hp, bp, g], done);
+  }
 }
 
 type Mapped = {
@@ -426,6 +456,7 @@ type Mapped = {
   loud: number;
   echo: number;
   mass: number;
+  decayMul: number;
 };
 
 function mapHit(params: HitParams, lite: boolean): Mapped {
@@ -434,20 +465,39 @@ function mapHit(params: HitParams, lite: boolean): Mapped {
   );
   const L = clamp01((params.color.L - OKLCH_L_MIN) / (OKLCH_L_MAX - OKLCH_L_MIN));
   const C = clamp01((params.color.C - OKLCH_C_MIN) / (OKLCH_C_MAX - OKLCH_C_MIN));
-  const bright = L * 0.55 + C * 0.45;
+  let bright = L * 0.55 + C * 0.45;
   let axis = clamp01(sizeNorm * 0.58 + bright * 0.42);
-  if (params.deeper) axis *= 0.42;
+  if (params.deeper || params.kind === 'merge') axis *= 0.42;
   const band = bandOf(params.generation ?? 0);
   const family = pickFamily(axis, band);
   const scale = SCALES[band];
-  const degree = Math.floor(((params.color.h % 360) / 360) * scale.length);
+  const degree =
+    (Math.floor(((params.color.h % 360) / 360) * scale.length) + (params.degreeShift ?? 0) + scale.length * 8) %
+    scale.length;
   const hueMul = REGISTER[band] * 2 ** (scale[degree] / 12);
   const speed = Math.min(Math.max(params.speed, 0), 14);
   const depthT = clamp01(params.depthT ?? 1);
-  const loud =
-    Math.min(0.18 + speed * 0.035 + (params.deeper ? 0.08 : 0), 0.62) * (0.32 + 0.68 * depthT);
-  const echo = (1 - depthT) * (lite ? 0.26 : 0.4);
-  return { family, sizeNorm, bright, hueMul, loud, echo, mass: Math.min(params.mass, 4) };
+  let loud =
+    Math.min(0.18 + speed * 0.035 + (params.deeper || params.kind === 'merge' ? 0.08 : 0), 0.62) *
+    (0.32 + 0.68 * depthT);
+  let echo = (1 - depthT) * (lite ? 0.26 : 0.4);
+  let decayMul = params.deeper || params.kind === 'merge' ? 1.9 : 1;
+  const surface = params.surface ?? 'shape';
+  if (surface === 'pointer') {
+    echo *= 0.18;
+    loud *= 0.92;
+    bright = Math.min(1, bright + 0.18);
+    decayMul *= 0.62;
+  } else if (surface === 'wall') {
+    echo = Math.min(0.72, echo * 1.45 + (lite ? 0.12 : 0.2));
+    bright *= 0.78;
+    decayMul *= 1.12;
+  }
+  if (params.kind === 'vertexLoss') {
+    echo *= 0.22;
+    decayMul = 0.4;
+  }
+  return { family, sizeNorm, bright, hueMul, loud, echo, mass: Math.min(params.mass, 4), decayMul };
 }
 
 function bandOf(generation: number): 0 | 1 | 2 {

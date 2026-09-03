@@ -55,6 +55,9 @@ export class Shape {
   private disappearing = false;
   private scaleT = 0;
   private scaleFrom = 0;
+  private pulse = 0;
+  private appearGlow = 0;
+  private ageMul = 1;
 
   constructor(
     world: World,
@@ -76,13 +79,15 @@ export class Shape {
     this.emissive.copy(this.rgb);
 
     const age = generationT(generation);
+    this.ageMul = 1 - 0.42 * age;
+    this.appearGlow = generation === 0 ? 1 : generation === 1 ? 0.28 : 0;
     this.fillMat = fillProto.clone();
-    this.fillMat.color.copy(this.rgb);
+    this.fillMat.color.copy(this.rgb).multiplyScalar(this.ageMul);
     this.fillMat.opacity = props.opacity;
-    this.fillMat.metalness = 0.24 - 0.16 * age;
-    this.fillMat.roughness = 0.26 + 0.36 * age;
-    this.fillMat.emissive.set(0x000000);
-    this.fillMat.emissiveIntensity = 0;
+    this.fillMat.metalness = 0.36 - 0.32 * age;
+    this.fillMat.roughness = 0.16 + 0.58 * age;
+    this.fillMat.emissive.copy(this.emissive);
+    this.fillMat.emissiveIntensity = 0.7 * this.appearGlow;
 
     const geometry = this.makeGeometry();
     this.mesh = new Mesh(geometry, this.fillMat);
@@ -185,8 +190,9 @@ export class Shape {
   flash(allow: boolean): void {
     if (!allow) return;
     this.fillMat.emissive.copy(this.emissive);
-    this.fillMat.emissiveIntensity = 0.85;
+    this.fillMat.emissiveIntensity = Math.max(this.fillMat.emissiveIntensity, 0.85);
     this.flashUntil = performance.now() + 120;
+    this.pulse = 1;
   }
 
   setEnvIntensity(value: number): void {
@@ -205,22 +211,27 @@ export class Shape {
     const z = this.body.translation().z;
     const t = Math.min(Math.max((z + halfD) / Math.max(halfD * 2, 1e-4), 0), 1);
     this.fillMat.opacity = this.props.opacity * (0.48 + 0.52 * t);
-    this.fillMat.color.copy(this.rgb).multiplyScalar(0.58 + 0.42 * t);
+    this.fillMat.color.copy(this.rgb).multiplyScalar(this.ageMul * (0.52 + 0.48 * t));
   }
 
   updateVisual(now: number, dt: number, allowFlash: boolean): void {
+    this.pulse = Math.max(0, this.pulse - dt * 9);
+    let scale = 1;
     if (this.appearing) {
       this.scaleT += dt / APPEAR_SEC;
       const u = Math.min(this.scaleT, 1);
-      this.mesh.scale.setScalar(easeOutCubic(u));
+      scale = easeOutCubic(u);
+      this.appearGlow *= Math.max(0, 1 - dt * 1.6);
       if (u >= 1) this.appearing = false;
     } else if (this.disappearing) {
       this.scaleT += dt / VANISH_SEC;
       const u = Math.min(this.scaleT, 1);
       const k = easeInCubic(u);
-      this.mesh.scale.setScalar(this.scaleFrom * (1 - k));
+      scale = this.scaleFrom * (1 - k);
       this.fillMat.opacity = this.props.opacity * (1 - k);
     }
+    if (!this.disappearing) scale *= 1 + this.pulse * 0.14;
+    this.mesh.scale.setScalar(scale);
     if (this.morphing && this.dropped) {
       this.morphT += dt / this.morphDuration;
       const u = Math.min(this.morphT, 1);
@@ -231,12 +242,16 @@ export class Shape {
     }
     if (!allowFlash) {
       this.fillMat.emissiveIntensity = 0;
+      this.pulse = 0;
       return;
     }
+    const glow = this.appearing || this.appearGlow > 0.02 ? 0.72 * this.appearGlow : 0;
     if (now > this.flashUntil) {
       this.fillMat.emissiveIntensity *= Math.max(0, 1 - dt * 8);
       if (this.fillMat.emissiveIntensity < 0.02) this.fillMat.emissiveIntensity = 0;
     }
+    this.fillMat.emissiveIntensity = Math.max(this.fillMat.emissiveIntensity, glow);
+    if (glow > 0) this.fillMat.emissive.copy(this.emissive);
   }
 
   /** Drop the local vertex closest to a world-space point. */

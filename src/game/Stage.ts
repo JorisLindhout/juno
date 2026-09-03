@@ -2,11 +2,15 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import type { RigidBody, World } from '@dimforge/rapier3d-compat';
 import {
   ACESFilmicToneMapping,
+  BufferAttribute,
+  BufferGeometry,
   Color,
   Fog,
   HemisphereLight,
   PMREMGenerator,
   PerspectiveCamera,
+  Points,
+  PointsMaterial,
   PointLight,
   SRGBColorSpace,
   Scene,
@@ -42,6 +46,14 @@ export class Stage {
   private peekX = 0;
   private peekY = 0;
   private idleT = 0;
+  private dolly = 0;
+  private dollyAim = 0;
+  private specks: Points;
+  private speckMat: PointsMaterial;
+  private sparks: Points;
+  private sparkMat: PointsMaterial;
+  private sparkLife = 0;
+  private sparkPos: Float32Array;
 
   constructor(canvas: HTMLCanvasElement, world: World) {
     this.world = world;
@@ -77,6 +89,35 @@ export class Stage {
     this.scene.environment = this.envTexture;
 
     this.attachPeek(canvas);
+    this.speckMat = new PointsMaterial({
+      color: 0xb8b4c4,
+      size: isMobile() ? 0.028 : 0.022,
+      sizeAttenuation: true,
+      transparent: true,
+      opacity: 0.42,
+      depthWrite: false,
+      fog: true,
+    });
+    this.specks = new Points(new BufferGeometry(), this.speckMat);
+    this.specks.frustumCulled = false;
+    this.scene.add(this.specks);
+
+    this.sparkPos = new Float32Array(12 * 3);
+    const sparkGeo = new BufferGeometry();
+    sparkGeo.setAttribute('position', new BufferAttribute(this.sparkPos, 3));
+    this.sparkMat = new PointsMaterial({
+      color: 0xfff4e4,
+      size: 0.055,
+      sizeAttenuation: true,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      fog: true,
+    });
+    this.sparks = new Points(sparkGeo, this.sparkMat);
+    this.sparks.frustumCulled = false;
+    this.sparks.visible = false;
+    this.scene.add(this.sparks);
   }
 
   setPixelRatio(ratio: number): void {
@@ -117,25 +158,67 @@ export class Stage {
     if (boxChanged) {
       beforeWalls?.(this.bounds);
       this.rebuildWalls();
+      this.scatterSpecks();
     }
     return this.bounds;
+  }
+
+  setDollyAim(value: number): void {
+    this.dollyAim = Math.min(1, Math.max(-1, value));
+  }
+
+  sparkAt(x: number, y: number, z: number, allow: boolean): void {
+    if (!allow) return;
+    for (let i = 0; i < 12; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const b = (Math.random() - 0.5) * 1.2;
+      const r = 0.04 + Math.random() * 0.11;
+      this.sparkPos[i * 3] = x + Math.cos(a) * r;
+      this.sparkPos[i * 3 + 1] = y + Math.sin(a) * r;
+      this.sparkPos[i * 3 + 2] = z + b * r;
+    }
+    const attr = this.sparks.geometry.getAttribute('position');
+    attr.needsUpdate = true;
+    this.sparkLife = 1;
+    this.sparks.visible = true;
+    this.sparkMat.opacity = 0.85;
+  }
+
+  setSpecksEnabled(on: boolean): void {
+    this.specks.visible = on;
+    if (!on) {
+      this.sparks.visible = false;
+      this.sparkLife = 0;
+    }
   }
 
   look(dt: number, pourX: number, pourY: number): void {
     const k = Math.min(1, dt * 6);
     this.peekX += (this.peekAimX - this.peekX) * k;
     this.peekY += (this.peekAimY - this.peekY) * k;
+    this.dolly += (this.dollyAim - this.dolly) * Math.min(1, dt * 7);
     this.idleT += dt;
-    const pour = Math.min(1, Math.hypot(pourX, pourY));
+    let px = pourX;
+    let py = pourY;
+    if (Math.hypot(px, py) < 0.14) {
+      px = 0;
+      py = 0;
+    }
+    const pour = Math.min(1, Math.hypot(px, py));
     const idle = 1 - pour * 0.85;
     const idleX = Math.sin(this.idleT * 0.17) * 0.14 * idle;
     const idleY = Math.cos(this.idleT * 0.13) * 0.1 * idle;
-    const gx = Math.min(1.5, Math.max(-1.5, pourX)) * 0.48;
-    const gy = Math.min(1.5, Math.max(-1.5, pourY)) * 0.42;
+    const gx = Math.min(1.5, Math.max(-1.5, px)) * 0.48;
+    const gy = Math.min(1.5, Math.max(-1.5, py)) * 0.42;
     this.camera.position.x = gx * 1.25 + this.peekX * 0.5 + idleX;
     this.camera.position.y = gy * 1.1 + this.peekY * 0.4 + idleY;
-    this.camera.position.z = CAMERA_Z;
+    this.camera.position.z = Math.min(10.2, Math.max(5.15, CAMERA_Z - this.dolly * 2.15));
     this.camera.lookAt(0, 0, -this.bounds.halfD * 0.22);
+    if (this.sparkLife > 0) {
+      this.sparkLife = Math.max(0, this.sparkLife - dt * 7);
+      this.sparkMat.opacity = this.sparkLife * 0.85;
+      if (this.sparkLife <= 0) this.sparks.visible = false;
+    }
   }
 
   driftAccent(dt: number): void {
@@ -193,5 +276,20 @@ export class Stage {
       );
       this.walls.push(body);
     }
+  }
+
+  private scatterSpecks(): void {
+    const n = isMobile() ? 36 : 64;
+    const { halfW, halfH, halfD } = this.bounds;
+    const pos = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      pos[i * 3] = (Math.random() * 2 - 1) * halfW * 0.92;
+      pos[i * 3 + 1] = (Math.random() * 2 - 1) * halfH * 0.92;
+      pos[i * 3 + 2] = (Math.random() * 2 - 1) * halfD * 0.88;
+    }
+    const geo = new BufferGeometry();
+    geo.setAttribute('position', new BufferAttribute(pos, 3));
+    this.specks.geometry.dispose();
+    this.specks.geometry = geo;
   }
 }

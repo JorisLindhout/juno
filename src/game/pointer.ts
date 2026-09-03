@@ -67,6 +67,19 @@ export class Pointers {
   }
 
   enabled = false;
+  private pinch0 = 0;
+
+  pinchDolly(): number {
+    const live: Ball[] = [];
+    for (const b of this.balls.values()) if (!b.fading) live.push(b);
+    if (live.length < 2) {
+      this.pinch0 = 0;
+      return 0;
+    }
+    const d = Math.hypot(live[0].clientX - live[1].clientX, live[0].clientY - live[1].clientY);
+    if (this.pinch0 < 1) this.pinch0 = d;
+    return Math.min(1, Math.max(-1, (this.pinch0 - d) / 220));
+  }
 
   preStep(dt: number): void {
     const gone: number[] = [];

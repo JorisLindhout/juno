@@ -234,9 +234,12 @@ export class Game {
     this.acc += elapsed;
     this.pointers.preStep(elapsed);
     const g = this.gyro.gravity();
+    const tilt = Math.hypot(g.x, g.y) / GRAVITY;
+    const boost = 1 + Math.min(1, Math.max(0, tilt - 0.28)) * 1.2;
     this.world.gravity.x = g.x;
     this.world.gravity.y = g.y;
     this.world.gravity.z = g.z;
+    this.stage.setDollyAim(this.pointers.pinchDolly());
     this.stage.look(elapsed, g.x / GRAVITY, g.y / GRAVITY);
     this.applyShake(elapsed);
 
@@ -253,6 +256,7 @@ export class Game {
     const calm = !this.gyro.jolting;
     const driftXy = calm && Math.hypot(g.x, g.y) < GRAVITY * 0.16;
     for (const s of this.shapes) {
+      s.body.setGravityScale(s.props.gravityScale * boost, true);
       if (calm) s.keepMoving(minSpeed, this.rng, driftXy);
       else s.body.wakeUp();
       s.updateVisual(now, elapsed, this.flashes);
@@ -338,8 +342,14 @@ export class Game {
     this.hits.beginBurst();
     bounceIslands.sort((a, b) => pickDominant(b, now).dominance(now) - pickDominant(a, now).dominance(now));
     for (const island of bounceIslands) {
-      const winner = pickDominant(island, now);
-      this.playHit(winner);
+      const loss = losses.find((l) => l.island === island);
+      if (loss) {
+        this.playHit(loss.victim, { kind: 'vertexLoss', surface: 'shape' });
+        const t = loss.victim.body.translation();
+        this.stage.sparkAt(t.x, t.y, t.z, this.flashes);
+      } else {
+        this.playIslandHits(island, now);
+      }
       for (const s of island) {
         sounded.add(s.id);
         s.flash(this.flashes);
@@ -355,8 +365,10 @@ export class Game {
       if (hit.kind === 'wall' && !hit.shape.locked(now)) spawnCandidates.push(hit.shape);
       if (sounded.has(hit.shape.id)) continue;
       sounded.add(hit.shape.id);
-      this.playHit(hit.shape);
+      this.playHit(hit.shape, { surface: hit.kind === 'pointer' ? 'pointer' : 'wall' });
       hit.shape.flash(this.flashes);
+      const t = hit.shape.body.translation();
+      this.stage.sparkAt(t.x, t.y, t.z, this.flashes);
     }
 
     for (const island of merges) {
@@ -418,7 +430,7 @@ export class Game {
     merged.lock(performance.now(), COOLDOWN_MS);
     merged.flash(this.flashes);
     this.shapes.push(merged);
-    this.playHit(merged, true);
+    this.playHit(merged, { kind: 'merge', surface: 'shape', deeper: true });
   }
 
   private maintainPopulation(): void {
@@ -523,7 +535,22 @@ export class Game {
     return this.shapes.find((s) => s.body.handle === bodyHandle);
   }
 
-  private playHit(shape: Shape, deeper = false): void {
+  private playIslandHits(island: Shape[], now: number): void {
+    const winner = pickDominant(island, now);
+    this.playHit(winner, { kind: 'bounce', surface: 'shape' });
+    const t = winner.body.translation();
+    this.stage.sparkAt(t.x, t.y, t.z, this.flashes);
+    if (island.length < 3) return;
+    const extra = island.length >= 5 ? 2 : 1;
+    for (let i = 1; i <= extra; i++) {
+      this.playHit(winner, { kind: 'bounce', surface: 'shape', degreeShift: i });
+    }
+  }
+
+  private playHit(
+    shape: Shape,
+    opts: { deeper?: boolean; surface?: 'shape' | 'wall' | 'pointer'; kind?: 'bounce' | 'merge' | 'vertexLoss'; degreeShift?: number } = {},
+  ): void {
     const z = shape.body.translation().z;
     const halfD = this.stage.bounds.halfD;
     const depthT = (z + halfD) / Math.max(halfD * 2, 1e-4);
@@ -535,8 +562,11 @@ export class Game {
       speed: shape.speed(),
       mass: shape.mass(),
       depthT,
-      deeper,
+      deeper: opts.deeper,
       generation: shape.generation,
+      surface: opts.surface ?? 'shape',
+      kind: opts.kind ?? (opts.deeper ? 'merge' : 'bounce'),
+      degreeShift: opts.degreeShift,
     });
   }
 
@@ -557,6 +587,7 @@ export class Game {
         for (const s of this.shapes) s.setEnvIntensity(0);
       } else {
         this.flashes = false;
+        this.stage.setSpecksEnabled(false);
       }
     } else if (fps > FPS_HIGH && this.dpr < pixelRatioCap() * 0.95) {
       this.dpr = Math.min(pixelRatioCap(), this.dpr * 1.08);
