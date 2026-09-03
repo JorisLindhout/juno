@@ -34,6 +34,7 @@ import { Gyro } from './gyro';
 import { Pointers } from './pointer';
 import { Shape } from './Shape';
 import { Stage } from './Stage';
+import type { Bounds } from './types';
 import {
   averageVelocity,
   centroidOf,
@@ -69,6 +70,8 @@ export class Game {
   private paused = false;
   private unlocking = false;
   private spawnUntil = 0;
+  private layoutW = 0;
+  private layoutH = 0;
 
   private constructor(canvas: HTMLCanvasElement, world: World) {
     this.world = world;
@@ -113,27 +116,68 @@ export class Game {
 
   private bindChrome(): void {
     const onResize = () => this.layout();
+    const onOrient = () => this.onOrient();
     window.addEventListener('resize', onResize);
     window.visualViewport?.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', onOrient);
+    screen.orientation?.addEventListener('change', onOrient);
     document.addEventListener('visibilitychange', () => {
       this.paused = document.hidden;
       if (!document.hidden) {
         this.last = performance.now();
         void this.hits.resume();
+        this.layout();
       }
     });
   }
 
+  private onOrient(): void {
+    this.gyro.reorient();
+    this.layoutW = 0;
+    this.layoutH = 0;
+    this.layout();
+    requestAnimationFrame(() => {
+      this.layout();
+      window.setTimeout(() => this.layout(), 80);
+      window.setTimeout(() => this.layout(), 250);
+      window.setTimeout(() => this.layout(), 500);
+    });
+  }
+
   private layout(): void {
-    const vv = window.visualViewport;
-    const w = Math.max(1, Math.floor(vv?.width ?? window.innerWidth));
-    const h = Math.max(1, Math.floor(vv?.height ?? window.innerHeight));
-    const bounds = this.stage.resize(w, h, this.dpr);
+    const canvas = this.stage.renderer.domElement;
+    let w = Math.floor(canvas.clientWidth);
+    let h = Math.floor(canvas.clientHeight);
+    if (w < 16 || h < 16) {
+      w = Math.floor(window.innerWidth);
+      h = Math.floor(window.innerHeight);
+    }
+    if (w < 16 || h < 16) return;
+    if (w === this.layoutW && h === this.layoutH) return;
+    this.layoutW = w;
+    this.layoutH = h;
+    const bounds = this.stage.resize(w, h, this.dpr, (next) => this.contain(next));
     const minSide = Math.min(bounds.halfW, bounds.halfH) * 2;
     this.sizeMin = minSide * SIZE_MIN_FRAC;
     this.sizeMax = minSide * SIZE_MAX_FRAC;
     this.pointers.bounds = bounds;
     this.pointers.radius = this.sizeMin * POINTER_RADIUS_FRAC;
+  }
+
+  private contain(bounds: Bounds): void {
+    const { halfW, halfH, halfD } = bounds;
+    for (const s of this.shapes.concat(this.departing)) {
+      const t = s.body.translation();
+      const m = s.size * 0.88 + 0.05;
+      const x = clamp(t.x, -halfW + m, halfW - m);
+      const y = clamp(t.y, -halfH + m, halfH - m);
+      const z = clamp(t.z, -halfD + m, halfD - m);
+      if (x === t.x && y === t.y && z === t.z) continue;
+      s.body.setTranslation({ x, y, z }, true);
+      const v = s.body.linvel();
+      s.body.setLinvel({ x: v.x * 0.3, y: v.y * 0.3, z: v.z * 0.3 }, true);
+      s.sync();
+    }
   }
 
   private populate(count: number): void {
@@ -205,7 +249,7 @@ export class Game {
     const minSpeed = Math.min(this.stage.bounds.halfW, this.stage.bounds.halfH) * MIN_SPEED_FRAC;
     const halfD = this.stage.bounds.halfD;
     const calm = !this.gyro.jolting;
-    const driftXy = calm && Math.hypot(g.x, g.y) < GRAVITY * 0.28;
+    const driftXy = calm && Math.hypot(g.x, g.y) < GRAVITY * 0.16;
     for (const s of this.shapes) {
       if (calm) s.keepMoving(minSpeed, this.rng, driftXy);
       else s.body.wakeUp();

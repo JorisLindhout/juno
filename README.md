@@ -20,7 +20,7 @@ npm run preview
 
 - **Mouse:** a small marble follows the cursor while it is over the canvas. A ray from the camera picks the front-most shape under the pointer; if nothing is there, the marble sits at the front of the box.
 - **Touch:** the marble exists only while a finger is down (up to two fingers), with the same depth follow.
-- **Gyro:** gravity is the phone’s real down vector, exaggerated so a hard tilt slams the field. Held normally, heavy shapes recede into the box and light ones come toward you; flip the phone upside down and heavies fall onto the glass while lights rise to the back. Shake shoves every shape the same way, not scaled by weight. iOS asks for motion and orientation on the first tap (both at once). Without a gyro, the camera still peeks with the pointer (and a slow idle) so depth reads.
+- **Gyro:** while you hold the phone still, the field is the same as desktop — shapes drift on their own. A real tilt pours them; a hard shake shoves every piece the same way; flip upside down and the glass becomes the floor. iOS asks for motion and orientation on the first tap. The canvas always fills the window; rotating the phone refits the box and keeps shapes inside. Without a gyro, the camera still peeks with the pointer (and a slow idle) so depth reads.
 
 ## World
 

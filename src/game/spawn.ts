@@ -50,7 +50,7 @@ export function randomProps(rng: () => number, sizeMin: number, sizeMax: number)
     friction: lerp(0.02, 0.14, rng()),
     linDamp: lerp(0.02, 0.08, rng()),
     angDamp: lerp(0.04, 0.14, rng()),
-    gravityScale: rng() < 0.5 ? lerp(-2.15, -0.55, rng()) : lerp(0.75, 2.4, rng()),
+    gravityScale: lerp(-0.75, 1.15, rng()),
     density: lerp(0.55, 1.7, rng()),
     elasticity: lerp(0.12, 0.55, rng()),
     wMerge,

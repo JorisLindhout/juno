@@ -8,6 +8,8 @@ body {
   margin: 0;
   width: 100%;
   height: 100%;
+  width: 100dvw;
+  height: 100dvh;
   overflow: hidden;
   background: #0c0c10;
   color-scheme: dark;

@@ -1,14 +1,16 @@
 import { GRAVITY } from '../config';
 
-const SHAKE_DEADZONE = 0.22;
-const JOLT_MAG = 0.7;
-const GRAVITY_LP = 0.48;
-const SHAKE_LP = 0.1;
-const TILT_POWER = 0.55;
-const SHAKE_ACCEL = 1.25;
-const SHAKE_DECAY = 0.78;
+const SHAKE_DEADZONE = 1.8;
+const JOLT_MAG = 3.4;
+const GRAVITY_LP = 0.28;
+const SHAKE_LP = 0.08;
+const SHAKE_ACCEL = 1.1;
+const SHAKE_DECAY = 0.7;
+const REST_XY = 0.42;
 
 type Permissioned = { requestPermission?: () => Promise<string> };
+
+const REST = { x: 0, y: 0, z: -GRAVITY };
 
 export class Gyro {
   beta = 0;
@@ -34,6 +36,7 @@ export class Gyro {
   private motionCalibrated = false;
   private lastMotion = 0;
   private toMs2 = 1;
+  private settleUntil = 0;
 
   async unlock(): Promise<void> {
     const DOE = window.DeviceOrientationEvent as
@@ -53,26 +56,49 @@ export class Gyro {
     this.attach();
   }
 
+  reorient(): void {
+    this.settleUntil = performance.now() + 520;
+    this.gX = 0;
+    this.gY = -9.81;
+    this.gZ = 0;
+    this.slowX = 0;
+    this.slowY = -9.81;
+    this.slowZ = 0;
+    this.shX = 0;
+    this.shY = 0;
+    this.shZ = 0;
+    this.joltUntil = 0;
+    this.quietShake();
+  }
+
   gravity(): { x: number; y: number; z: number } {
-    if (!this.enabled) {
-      this.shake.x = 0;
-      this.shake.y = 0;
-      this.shake.z = 0;
-      this.jolting = false;
-      return { x: 0, y: 0, z: -GRAVITY };
+    if (!this.enabled || performance.now() < this.settleUntil) {
+      this.quietShake();
+      return { ...REST };
     }
+
+    this.updateShake();
 
     const dir = this.worldVec(this.gX, this.gY, this.gZ);
     const mag = Math.hypot(dir.x, dir.y, dir.z) || 1;
-    let nx = dir.x / mag;
-    let ny = dir.y / mag;
-    let nz = dir.z / mag;
-    nx = Math.sign(nx) * Math.abs(nx) ** TILT_POWER;
-    ny = Math.sign(ny) * Math.abs(ny) ** TILT_POWER;
-    nz = Math.sign(nz) * Math.abs(nz) ** TILT_POWER;
-    const nMag = Math.hypot(nx, ny, nz) || 1;
-    const g = GRAVITY / nMag;
+    const nx = dir.x / mag;
+    const ny = dir.y / mag;
+    const nz = dir.z / mag;
+    const tilted = Math.hypot(nx, ny);
+    const inverted = nz > -0.28;
+    if (!inverted && tilted < REST_XY) return { ...REST };
 
+    return { x: nx * GRAVITY, y: ny * GRAVITY, z: nz * GRAVITY };
+  }
+
+  private quietShake(): void {
+    this.shake.x = 0;
+    this.shake.y = 0;
+    this.shake.z = 0;
+    this.jolting = false;
+  }
+
+  private updateShake(): void {
     const now = performance.now();
     if (now - this.lastMotion > 40) {
       this.shX *= SHAKE_DECAY;
@@ -82,7 +108,7 @@ export class Gyro {
     const raw = this.worldVec(this.shX * this.toMs2, this.shY * this.toMs2, this.shZ * this.toMs2);
     const sm = Math.hypot(raw.x, raw.y, raw.z);
     if (sm > SHAKE_DEADZONE) {
-      const k = SHAKE_ACCEL + Math.min(sm, 20) * 0.08;
+      const k = SHAKE_ACCEL + Math.min(sm, 20) * 0.06;
       this.shake.x = raw.x * k;
       this.shake.y = raw.y * k;
       this.shake.z = raw.z * k;
@@ -92,9 +118,7 @@ export class Gyro {
       this.shake.z *= SHAKE_DECAY;
     }
     this.jolting = sm > JOLT_MAG || now < this.joltUntil;
-    if (sm > JOLT_MAG) this.joltUntil = now + 280;
-
-    return { x: nx * g, y: ny * g, z: nz * g };
+    if (sm > JOLT_MAG) this.joltUntil = now + 160;
   }
 
   private worldVec(x: number, y: number, z: number): { x: number; y: number; z: number } {
@@ -102,25 +126,27 @@ export class Gyro {
   }
 
   private ingestMotion(ag: { x: number; y: number; z: number }, user: { x: number; y: number; z: number } | null): void {
-    const mag = Math.hypot(ag.x, ag.y, ag.z);
+    const s = toScreen(ag.x, ag.y, ag.z);
+    const u = user ? toScreen(user.x, user.y, user.z) : null;
+    const mag = Math.hypot(s.x, s.y, s.z);
     if (mag > 4) this.toMs2 = 1;
     else if (mag > 0.15) this.toMs2 = 9.81;
 
-    this.gX += (ag.x - this.gX) * GRAVITY_LP;
-    this.gY += (ag.y - this.gY) * GRAVITY_LP;
-    this.gZ += (ag.z - this.gZ) * GRAVITY_LP;
-    this.slowX += (ag.x - this.slowX) * SHAKE_LP;
-    this.slowY += (ag.y - this.slowY) * SHAKE_LP;
-    this.slowZ += (ag.z - this.slowZ) * SHAKE_LP;
+    this.gX += (s.x - this.gX) * GRAVITY_LP;
+    this.gY += (s.y - this.gY) * GRAVITY_LP;
+    this.gZ += (s.z - this.gZ) * GRAVITY_LP;
+    this.slowX += (s.x - this.slowX) * SHAKE_LP;
+    this.slowY += (s.y - this.slowY) * SHAKE_LP;
+    this.slowZ += (s.z - this.slowZ) * SHAKE_LP;
 
-    if (user) {
-      this.shX = user.x;
-      this.shY = user.y;
-      this.shZ = user.z;
+    if (u) {
+      this.shX = u.x;
+      this.shY = u.y;
+      this.shZ = u.z;
     } else {
-      this.shX = ag.x - this.slowX;
-      this.shY = ag.y - this.slowY;
-      this.shZ = ag.z - this.slowZ;
+      this.shX = s.x - this.slowX;
+      this.shY = s.y - this.slowY;
+      this.shZ = s.z - this.slowZ;
     }
 
     this.hasMotion = true;
@@ -131,7 +157,7 @@ export class Gyro {
       this.calibrated = false;
       this.motionCalibrated = true;
     }
-    this.calibrate(ag.x, ag.y, ag.z);
+    this.calibrate(s.x, s.y, s.z);
   }
 
   private calibrate(x: number, y: number, z: number): void {
@@ -151,7 +177,7 @@ export class Gyro {
       if (ag && ag.x != null && ag.y != null && ag.z != null) {
         const a = e.acceleration;
         const user =
-          a && a.x != null && a.y != null && a.z != null && Math.hypot(a.x, a.y, a.z) > 0.05
+          a && a.x != null && a.y != null && a.z != null && Math.hypot(a.x, a.y, a.z) > 0.45
             ? { x: a.x, y: a.y, z: a.z }
             : null;
         this.ingestMotion({ x: ag.x, y: ag.y, z: ag.z }, user);
@@ -165,15 +191,34 @@ export class Gyro {
       if (this.hasMotion) return;
       const beta = (e.beta * Math.PI) / 180;
       const gamma = (e.gamma * Math.PI) / 180;
-      const x = Math.sin(gamma) * 9.81;
-      const y = -Math.cos(gamma) * Math.sin(beta) * 9.81;
-      const z = -Math.cos(gamma) * Math.cos(beta) * 9.81;
-      this.gX = x;
-      this.gY = y;
-      this.gZ = z;
-      this.calibrate(x, y, z);
+      const raw = toScreen(
+        Math.sin(gamma) * 9.81,
+        -Math.cos(gamma) * Math.sin(beta) * 9.81,
+        -Math.cos(gamma) * Math.cos(beta) * 9.81,
+      );
+      this.gX = raw.x;
+      this.gY = raw.y;
+      this.gZ = raw.z;
+      this.calibrate(raw.x, raw.y, raw.z);
     };
     window.addEventListener('deviceorientation', onOrient);
     window.addEventListener('deviceorientationabsolute', onOrient);
   }
+}
+
+/** DeviceMotion is in the phone's unrotated frame; the page may be landscape. */
+function toScreen(x: number, y: number, z: number): { x: number; y: number; z: number } {
+  const a = screenAngle();
+  if (a === 90) return { x: y, y: -x, z };
+  if (a === 180) return { x: -x, y: -y, z };
+  if (a === 270) return { x: -y, y: x, z };
+  return { x, y, z };
+}
+
+function screenAngle(): number {
+  const win = window as Window & { orientation?: number };
+  const raw = screen.orientation?.angle ?? win.orientation ?? 0;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return 0;
+  return ((n % 360) + 360) % 360;
 }

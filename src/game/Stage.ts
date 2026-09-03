@@ -88,15 +88,21 @@ export class Stage {
     this.scene.environment = on ? this.envTexture : null;
   }
 
-  resize(width: number, height: number, dpr: number): Bounds {
-    this.camera.aspect = width / Math.max(height, 1);
+  resize(width: number, height: number, dpr: number, beforeWalls?: (bounds: Bounds) => void): Bounds {
+    const w = Math.max(1, width);
+    const h = Math.max(1, height);
+    this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.renderer.setPixelRatio(dpr);
-    this.renderer.setSize(width, height, false);
+    this.renderer.setSize(w, h, false);
 
     const halfH = Math.tan((CAMERA_FOV * Math.PI) / 360) * CAMERA_Z;
     const halfW = halfH * this.camera.aspect;
     const halfD = Math.min(halfW, halfH) * BOX_DEPTH_FRAC;
+    const boxChanged =
+      Math.abs(halfW - this.bounds.halfW) > 0.012 ||
+      Math.abs(halfH - this.bounds.halfH) > 0.012 ||
+      Math.abs(halfD - this.bounds.halfD) > 0.012;
     this.bounds = { halfW, halfH, halfD };
 
     const front = CAMERA_Z - halfD;
@@ -108,7 +114,10 @@ export class Stage {
     this.lamp.distance = halfD * 3.6 + 2.4;
     this.lamp.intensity = isMobile() ? 2.7 : 3.4;
 
-    this.rebuildWalls();
+    if (boxChanged) {
+      beforeWalls?.(this.bounds);
+      this.rebuildWalls();
+    }
     return this.bounds;
   }
 
@@ -163,8 +172,8 @@ export class Stage {
     this.walls.length = 0;
     const { halfW, halfH, halfD } = this.bounds;
     const t = WALL_THICKNESS;
-    const side = 0.46;
-    const floor = 0.28;
+    const side = 0.52;
+    const floor = 0.78;
     const walls: Array<[number, number, number, number, number, number, number]> = [
       [halfW + t, 0, 0, t, halfH + t, halfD + t, side],
       [-(halfW + t), 0, 0, t, halfH + t, halfD + t, side],
