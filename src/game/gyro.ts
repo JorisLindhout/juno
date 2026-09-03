@@ -7,6 +7,7 @@ const SHAKE_LP = 0.08;
 const SHAKE_ACCEL = 1.1;
 const SHAKE_DECAY = 0.7;
 const REST_XY = 0.42;
+const FLAT_Z = 0.68;
 
 type Permissioned = { requestPermission?: () => Promise<string> };
 
@@ -78,6 +79,9 @@ export class Gyro {
     }
 
     this.updateShake();
+
+    const rawMag = Math.hypot(this.gX, this.gY, this.gZ) || 1;
+    if (Math.abs(this.gZ) / rawMag > FLAT_Z) return { ...REST };
 
     const dir = this.worldVec(this.gX, this.gY, this.gZ);
     const mag = Math.hypot(dir.x, dir.y, dir.z) || 1;
