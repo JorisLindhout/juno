@@ -1,7 +1,7 @@
 {
   "name": "Juno",
   "short_name": "Juno",
-  "description": "Fullscreen ambient ASMR toy: convex shapes in a shallow 3D space.",
+  "description": "Non-terminating particle field. Convex polytopes, generational merge, vertex ablation, spawn-weighted replenishment. Audio palette indexed by generation. Visual and auditory state keep changing.",
   "start_url": "/",
   "display": "fullscreen",
   "orientation": "any",

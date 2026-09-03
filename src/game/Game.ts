@@ -36,6 +36,7 @@ import { Shape } from './Shape';
 import { Stage } from './Stage';
 import type { Bounds } from './types';
 import {
+  applyGeneration,
   averageVelocity,
   centroidOf,
   hullFor,
@@ -192,6 +193,7 @@ export class Game {
     const props = randomProps(this.rng, this.sizeMin, this.sizeMax);
     props.size = clamp(props.size, this.sizeMin, this.sizeMax);
     const pose = this.poseUnoccupied(props.size);
+    applyGeneration(props, 0, pose.linvel, pose.angvel);
     const shape = new Shape(
       this.world,
       this.stage.scene,
@@ -396,6 +398,10 @@ export class Game {
       angvel.z += a.z;
     }
     angvel.multiplyScalar(1 / alive.length);
+    let generation = 0;
+    for (const s of alive) if (s.generation > generation) generation = s.generation;
+    generation += 1;
+    applyGeneration(props, generation, linvel, angvel);
     for (const s of alive) this.despawn(s);
     const merged = new Shape(
       this.world,
@@ -405,6 +411,7 @@ export class Game {
       position,
       linvel,
       angvel,
+      generation,
     );
     merged.setEnvIntensity(this.envOn ? 0.85 : 0);
     merged.inheritLineage(alive);
@@ -443,6 +450,7 @@ export class Game {
     props.size = clamp(props.size, this.sizeMin, this.sizeMax);
     const t = emitter.body.translation();
     const pose = this.poseNear(new Vector3(t.x, t.y, t.z), props.size, emitter.size);
+    applyGeneration(props, 0, pose.linvel, pose.angvel);
     const shape = new Shape(
       this.world,
       this.stage.scene,

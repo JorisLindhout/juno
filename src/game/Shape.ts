@@ -10,7 +10,14 @@ import {
 } from 'three';
 import { ConvexGeometry } from 'three/addons/geometries/ConvexGeometry.js';
 import { oklchToRgb } from '../color';
-import { APPEAR_SEC, GENERATION_DOMINANCE, MIN_VERTS, VANISH_SEC } from '../config';
+import {
+  APPEAR_SEC,
+  GENERATION_DOMINANCE,
+  MIN_VERTS,
+  VANISH_SEC,
+  generationSpeedMul,
+  generationT,
+} from '../config';
 import { pointsToFlat } from './hull';
 import type { ShapeProps } from './types';
 
@@ -57,18 +64,23 @@ export class Shape {
     position: Vector3,
     linvel: Vector3,
     angvel: Vector3,
+    generation = 0,
   ) {
     this.world = world;
     this.props = props;
     this.points = points.map((p) => p.clone());
+    this.generation = generation;
 
     const [r, g, b] = oklchToRgb(props.color.L, props.color.C, props.color.h);
     this.rgb.setRGB(r, g, b);
     this.emissive.copy(this.rgb);
 
+    const age = generationT(generation);
     this.fillMat = fillProto.clone();
     this.fillMat.color.copy(this.rgb);
     this.fillMat.opacity = props.opacity;
+    this.fillMat.metalness = 0.24 - 0.16 * age;
+    this.fillMat.roughness = 0.26 + 0.36 * age;
     this.fillMat.emissive.set(0x000000);
     this.fillMat.emissiveIntensity = 0;
 
@@ -106,23 +118,25 @@ export class Shape {
 
   keepMoving(minSpeed: number, rng: () => number, driftXy = true): void {
     this.body.wakeUp();
+    const floor = minSpeed * generationSpeedMul(this.generation);
     const v = this.body.linvel();
     const xy = Math.hypot(v.x, v.y);
-    if (driftXy && xy < minSpeed) {
+    if (driftXy && xy < floor) {
       if (xy < 0.08) {
         const dir = new Vector3(rng() - 0.5, rng() - 0.5, 0);
         if (dir.lengthSq() < 1e-6) dir.set(1, 0.2, 0);
-        dir.normalize().multiplyScalar(minSpeed);
+        dir.normalize().multiplyScalar(floor);
         this.body.setLinvel({ x: dir.x, y: dir.y, z: v.z }, true);
       } else {
-        const s = minSpeed / xy;
+        const s = floor / xy;
         this.body.setLinvel({ x: v.x * s, y: v.y * s, z: v.z }, true);
       }
     }
     const w = this.body.angvel();
-    if (Math.hypot(w.x, w.y, w.z) < 0.25) {
+    const spin = 0.45 + 1.15 * (1 - generationT(this.generation));
+    if (Math.hypot(w.x, w.y, w.z) < spin * 0.18) {
       this.body.setAngvel(
-        { x: (rng() - 0.5) * 1.4, y: (rng() - 0.5) * 1.4, z: (rng() - 0.5) * 1.4 },
+        { x: (rng() - 0.5) * spin, y: (rng() - 0.5) * spin, z: (rng() - 0.5) * spin },
         true,
       );
     }

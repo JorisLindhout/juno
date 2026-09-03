@@ -22,6 +22,7 @@ export const MAX_VOICES_DESKTOP = 8;
 export const MAX_HITS_PER_STEP_MOBILE = 4;
 export const MAX_HITS_PER_STEP_DESKTOP = 6;
 export const GENERATION_DOMINANCE = 8;
+export const GENERATION_LOOK_MAX = 2;
 export const MAX_POINTERS = 2;
 
 export const PIXEL_RATIO_MOBILE = 1.5;
@@ -56,4 +57,13 @@ export function maxShapes(): number {
 export function pixelRatioCap(): number {
   const cap = isMobile() ? PIXEL_RATIO_MOBILE : PIXEL_RATIO_DESKTOP;
   return Math.min(window.devicePixelRatio || 1, cap);
+}
+
+/** 0 = fresh, 1 = generation 2+ (same cap as the audio palettes). */
+export function generationT(generation: number): number {
+  return Math.min(Math.max(generation, 0), GENERATION_LOOK_MAX) / GENERATION_LOOK_MAX;
+}
+
+export function generationSpeedMul(generation: number): number {
+  return 1.28 - 0.73 * generationT(generation);
 }

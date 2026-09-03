@@ -12,6 +12,8 @@ import {
   OKLCH_C_MIN,
   OKLCH_L_MAX,
   OKLCH_L_MIN,
+  generationSpeedMul,
+  generationT,
 } from '../config';
 import { hullPoints } from './hull';
 import type { Bounds, ShapeProps } from './types';
@@ -84,6 +86,32 @@ export function hullFor(props: ShapeProps, rng: () => number): Vector3[] {
   return hullPoints(props.n, props.size, rng);
 }
 
+/** Pull color, damping, and merge/bounce toward the lineage band. Returns the speed scale. */
+export function applyGeneration(
+  props: ShapeProps,
+  generation: number,
+  linvel?: Vector3,
+  angvel?: Vector3,
+): number {
+  const t = generationT(generation);
+  props.color.L = clamp(lerp(props.color.L, lerp(0.8, 0.4, t), 0.55), 0.36, 0.86);
+  props.color.C = clamp(lerp(props.color.C, lerp(0.34, 0.1, t), 0.5), 0.06, 0.38);
+
+  const pool = props.wMerge + props.wBounce;
+  const current = pool > 1e-6 ? props.wMerge / pool : 0.5;
+  const mixed = lerp(current, lerp(0.78, 0.22, t), 0.7);
+  props.wMerge = pool * mixed;
+  props.wBounce = pool * (1 - mixed);
+
+  props.linDamp = lerp(props.linDamp, lerp(0.016, 0.13, t), 0.7);
+  props.angDamp = lerp(props.angDamp, lerp(0.03, 0.2, t), 0.6);
+
+  const mul = generationSpeedMul(generation);
+  linvel?.multiplyScalar(mul);
+  angvel?.multiplyScalar(0.55 + 0.45 * mul);
+  return mul;
+}
+
 export function mergeProps(shapes: Shape[]): ShapeProps {
   const ps = shapes.map((s) => s.props);
   const color: Oklch = {
@@ -149,4 +177,8 @@ export function centroidOf(shapes: Shape[]): Vector3 {
 
 export function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
+}
+
+function clamp(v: number, a: number, b: number): number {
+  return Math.min(b, Math.max(a, v));
 }
