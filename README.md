@@ -24,7 +24,9 @@ npm run preview
 
 ## World
 
-The volume is a box: shapes bounce off all six sides. Held upright, gravity points into the box (away from you); inverted, the screen is the floor. Shapes ease in and out when they appear or vanish. After a merge or a death the population refills to eight.
+The volume is a box: shapes bounce off all six sides. Held upright, gravity points into the box (away from you); inverted, the screen is the floor. Shapes ease in and out when they appear or vanish.
+
+The field starts at eight shapes and then wanders. Merges and tetra deaths thin it; it only refills automatically if the count would drop below four. Each shape also has a spawn weight (`wSpawn`, 0–1, independent of the collision roll). On a bounce or wall hit, the most fertile shape in that contact may ease in a new one nearby, at most once every half-second, up to twelve on phones and twenty on desktop. Merges average parent `wSpawn`, so a fertile mix tends to fill the box and a barren mix stays sparse.
 
 Collisions roll one action from averaged per-shape weights: bounce, merge, or vertex-loss. Pile-ups play a single hit from the most dominant shape (oldest, plus merge generation).
 

@@ -15,6 +15,7 @@ export type ShapeProps = {
   wMerge: number;
   wBounce: number;
   wVertexLoss: number;
+  wSpawn: number;
 };
 
 export type Bounds = {

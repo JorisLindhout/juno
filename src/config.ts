@@ -1,6 +1,7 @@
 export const MAX_VERTS = 12;
 export const MIN_VERTS = 4;
 export const INITIAL_SHAPES = 8;
+export const MIN_SHAPES = 4;
 export const MAX_SHAPES_MOBILE = 12;
 export const MAX_SHAPES_DESKTOP = 20;
 export const MIN_SPEED_FRAC = 0.28;
@@ -12,6 +13,8 @@ export const POINTER_RADIUS_FRAC = 0.5;
 export const WALL_THICKNESS = 0.22;
 
 export const COOLDOWN_MS = 180;
+export const SPAWN_COOLDOWN_MS = 560;
+export const SPAWN_CHANCE = 0.34;
 export const APPEAR_SEC = 0.52;
 export const VANISH_SEC = 0.4;
 export const MAX_VOICES_MOBILE = 6;

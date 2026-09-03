@@ -56,6 +56,7 @@ export function randomProps(rng: () => number, sizeMin: number, sizeMax: number)
     wMerge,
     wBounce,
     wVertexLoss,
+    wSpawn: lerp(0.06, 0.9, rng()),
   };
 }
 
@@ -118,6 +119,7 @@ export function mergeProps(shapes: Shape[]): ShapeProps {
     wMerge,
     wBounce,
     wVertexLoss,
+    wSpawn: mean(ps.map((p) => p.wSpawn)),
   };
 }
 

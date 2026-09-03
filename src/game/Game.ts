@@ -8,10 +8,13 @@ import {
   FPS_LOW,
   GRAVITY,
   INITIAL_SHAPES,
+  MIN_SHAPES,
   MIN_SPEED_FRAC,
   POINTER_RADIUS_FRAC,
   SIZE_MAX_FRAC,
   SIZE_MIN_FRAC,
+  SPAWN_CHANCE,
+  SPAWN_COOLDOWN_MS,
   isMobile,
   maxShapes,
   pixelRatioCap,
@@ -20,6 +23,7 @@ import {
   canLoseVertex,
   collectIslands,
   pickDominant,
+  pickEmitter,
   pickVictim,
   rollAction,
   victimToward,
@@ -33,6 +37,7 @@ import {
   averageVelocity,
   centroidOf,
   hullFor,
+  lerp,
   mergeProps,
   mulberry32,
   randomPose,
@@ -62,6 +67,7 @@ export class Game {
   private readonly dt = 1 / 60;
   private paused = false;
   private unlocking = false;
+  private spawnUntil = 0;
 
   private constructor(canvas: HTMLCanvasElement, world: World) {
     this.world = world;
@@ -248,6 +254,7 @@ export class Game {
     const bounceIslands: Shape[][] = [];
     const losses: Array<{ victim: Shape; toward: Vector3; island: Shape[] }> = [];
     const sounded = new Set<number>();
+    const spawnCandidates: Shape[] = [];
 
     for (const island of islands) {
       if (island.some((s) => s.locked(now))) continue;
@@ -273,6 +280,7 @@ export class Game {
       for (const s of island) {
         sounded.add(s.id);
         s.flash(this.flashes);
+        spawnCandidates.push(s);
       }
     }
     for (const island of merges) {
@@ -281,6 +289,7 @@ export class Game {
 
     impacts.sort((a, b) => Number(b.kind === 'pointer') - Number(a.kind === 'pointer'));
     for (const hit of impacts) {
+      if (hit.kind === 'wall' && !hit.shape.locked(now)) spawnCandidates.push(hit.shape);
       if (sounded.has(hit.shape.id)) continue;
       sounded.add(hit.shape.id);
       this.playHit(hit.shape);
@@ -301,12 +310,14 @@ export class Game {
     for (const { victim, toward } of losses) {
       if (toRemove.has(victim) && willDie(victim)) {
         this.despawn(victim);
-        this.maintainPopulation();
         continue;
       }
       if (!canLoseVertex(victim)) continue;
       victim.beginVertexLoss(toward);
     }
+
+    this.maintainPopulation();
+    this.maybeEmit(spawnCandidates, now);
   }
 
   private applyMerge(island: Shape[]): void {
@@ -340,13 +351,83 @@ export class Game {
     merged.flash(this.flashes);
     this.shapes.push(merged);
     this.playHit(merged, true);
-    this.maintainPopulation();
   }
 
   private maintainPopulation(): void {
-    while (this.shapes.length < INITIAL_SHAPES) {
+    while (this.shapes.length < MIN_SHAPES) {
       if (!this.spawnRandom()) break;
     }
+  }
+
+  private maybeEmit(candidates: Shape[], now: number): void {
+    if (now < this.spawnUntil) return;
+    if (this.shapes.length >= maxShapes()) return;
+    const alive: Shape[] = [];
+    const seen = new Set<number>();
+    for (const s of candidates) {
+      if (seen.has(s.id) || !this.shapes.includes(s)) continue;
+      seen.add(s.id);
+      alive.push(s);
+    }
+    if (!alive.length) return;
+    const emitter = pickEmitter(alive, this.rng);
+    if (this.rng() >= emitter.props.wSpawn * SPAWN_CHANCE) return;
+    if (!this.spawnNear(emitter)) return;
+    this.spawnUntil = now + SPAWN_COOLDOWN_MS;
+  }
+
+  private spawnNear(emitter: Shape): Shape | null {
+    if (this.shapes.length >= maxShapes()) return null;
+    const props = randomProps(this.rng, this.sizeMin, this.sizeMax);
+    props.size = clamp(props.size, this.sizeMin, this.sizeMax);
+    const t = emitter.body.translation();
+    const pose = this.poseNear(new Vector3(t.x, t.y, t.z), props.size, emitter.size);
+    const shape = new Shape(
+      this.world,
+      this.stage.scene,
+      props,
+      hullFor(props, this.rng),
+      pose.position,
+      pose.linvel,
+      pose.angvel,
+    );
+    shape.setEnvIntensity(this.envOn ? 0.85 : 0);
+    shape.lock(performance.now(), COOLDOWN_MS);
+    this.shapes.push(shape);
+    return shape;
+  }
+
+  private poseNear(origin: Vector3, size: number, emitterSize: number) {
+    const b = this.stage.bounds;
+    const margin = size + 0.08;
+    for (let i = 0; i < 28; i++) {
+      const dir = new Vector3(this.rng() - 0.5, this.rng() - 0.5, (this.rng() - 0.5) * 0.5);
+      if (dir.lengthSq() < 1e-8) dir.set(1, 0, 0);
+      dir.normalize().multiplyScalar(emitterSize + size + 0.08);
+      const position = origin.clone().add(dir);
+      position.x = clamp(position.x, -b.halfW + margin, b.halfW - margin);
+      position.y = clamp(position.y, -b.halfH + margin, b.halfH - margin);
+      position.z = clamp(position.z, -b.halfD + margin, b.halfD - margin);
+      let ok = true;
+      for (const s of this.shapes) {
+        const t = s.body.translation();
+        if (position.distanceTo(new Vector3(t.x, t.y, t.z)) < size + s.size + 0.04) {
+          ok = false;
+          break;
+        }
+      }
+      if (!ok) continue;
+      const speed = lerp(1.4, 3.2, this.rng());
+      const vel = new Vector3(this.rng() - 0.5, this.rng() - 0.5, (this.rng() - 0.5) * 0.45);
+      if (vel.lengthSq() < 1e-8) vel.set(0.4, 0.2, 0);
+      vel.normalize().multiplyScalar(speed);
+      const spin = lerp(0.6, 2.8, this.rng());
+      const angvel = new Vector3(this.rng() - 0.5, this.rng() - 0.5, this.rng() - 0.5);
+      if (angvel.lengthSq() < 1e-8) angvel.set(0, 1, 0);
+      angvel.normalize().multiplyScalar(spin);
+      return { position, linvel: vel, angvel };
+    }
+    return this.poseUnoccupied(size);
   }
 
   private despawn(shape: Shape): void {

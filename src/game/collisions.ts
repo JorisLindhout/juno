@@ -83,6 +83,23 @@ export function pickDominant(shapes: Shape[], now: number): Shape {
   return best;
 }
 
+export function pickEmitter(shapes: Shape[], rng: () => number): Shape {
+  let best = shapes[0];
+  let bestW = -1;
+  const tied: Shape[] = [];
+  for (const s of shapes) {
+    if (s.props.wSpawn > bestW) {
+      bestW = s.props.wSpawn;
+      best = s;
+      tied.length = 0;
+      tied.push(s);
+    } else if (s.props.wSpawn === bestW) {
+      tied.push(s);
+    }
+  }
+  return tied.length > 1 ? tied[Math.floor(rng() * tied.length)] : best;
+}
+
 export function pickVictim(shapes: Shape[], rng: () => number): Shape {
   let best = shapes[0];
   let bestW = -1;
