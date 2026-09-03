@@ -86,7 +86,12 @@ export function hullFor(props: ShapeProps, rng: () => number): Vector3[] {
   return hullPoints(props.n, props.size, rng);
 }
 
-/** Pull color, damping, and merge/bounce toward the lineage band. Returns the speed scale. */
+/**
+ * Restyle a shape into its generation (0 / 1 / 2).
+ * Color darkens and desaturates, damping rises, merge weight falls toward bounce.
+ * Elders still carry merge weight so they can eat a younger shape; two elders
+ * colliding never use it (`islandCanMerge`).
+ */
 export function applyGeneration(
   props: ShapeProps,
   generation: number,

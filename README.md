@@ -31,15 +31,25 @@ The volume is a box: shapes bounce off all six sides. There is no drawn floor or
 
 Each shape has its own gravity scale (heavy vs helium), bounce, density, and action weights. At rest, gravity points into the box (away from you). Inverted, it points at the screen.
 
-Fresh shapes are brighter, quicker, and more likely to merge. Each merge ages the lineage: older shapes go darker and slower, and lean toward bounce. That is the same split the hit palettes use (rim/hat/bell → wood/tom → thud/kick).
-
 The field starts at eight shapes and then wanders. Merges and tetra deaths thin it; it only refills automatically if the count would drop below four. Each shape also has a spawn weight (`wSpawn`, 0–1, independent of the collision roll). On a bounce or wall hit, the most fertile shape in that contact may ease in a new one nearby, at most once every half-second, up to twelve on phones and twenty on desktop. Merges average parent `wSpawn`, so a fertile mix tends to fill the box and a barren mix stays sparse.
 
-Collisions roll one action from averaged per-shape weights: bounce, merge, or vertex-loss. Spheres skip vertex-loss; a tetra that loses a vertex vanishes. Pile-ups play a single hit from the most dominant shape (oldest, plus merge generation).
+Collisions roll one action from averaged per-shape weights: bounce, merge, or vertex-loss. Generation can veto merge (see below). Spheres skip vertex-loss; a tetra that loses a vertex vanishes. Pile-ups play a single hit from the most dominant shape (age in seconds, plus a boost for generation 1 or 2).
+
+## Generation
+
+Generation is one of three states. Spawns start at **0**. A merge’s child is one step older than the oldest parent, and never past 2. It keeps the oldest parent’s birth time.
+
+- **0 — fresh.** Bright, quick, a short glow on appear. Likely to merge. Hits: rim, hat, bell.
+- **1 — first merge.** Mid brightness and speed, a faint appear glow. Hits: wood, tom, cowbell.
+- **2 — elder.** Darker, more matte, slower. No appear glow. Hits: thud, kick, darker tom. Merge weight leans toward bounce.
+
+Two elders never merge with each other: if every shape in a contact is generation 2, a merge roll becomes a bounce. An elder can still merge with a generation 0 or 1 shape, so the box keeps dark pieces and bright sparks instead of blending into one age. A young shape in a pile-up can still fold elders together; the child stays generation 2.
+
+After every spawn and merge, color, damping, speed, and merge-vs-bounce are restyled to that state. Long-lived elders are old in time, not gen 14.
 
 ## Sound
 
-Web Audio one-shot hits, retuned per shape. Merge generation picks the palette: fresh shapes (rim, hat, bell), first-generation merges (wood, tom, cowbell), older lineage (thud, kick, darker tom). Size, color, and speed still retune pitch, brightness, and loudness inside that family. Deeper hits are quieter and pick up a short slap-echo. Voices are capped (6 on mobile, 8 on desktop) so pile-ups stay cheap.
+Web Audio one-shot hits, retuned per shape. Generation band picks the palette (see above). Size, color, and speed still retune pitch, brightness, and loudness inside that family. Deeper hits are quieter and pick up a short slap-echo. Bounce uses the current hit; merge is lower and longer; vertex-loss is a short dry click. Marble contacts are close and dry, walls a bit more boxed. Voices are capped (6 on mobile, 8 on desktop) so pile-ups stay cheap.
 
 ## Stack
 

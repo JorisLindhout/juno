@@ -22,7 +22,9 @@ export const MAX_VOICES_DESKTOP = 8;
 export const MAX_HITS_PER_STEP_MOBILE = 4;
 export const MAX_HITS_PER_STEP_DESKTOP = 6;
 export const GENERATION_DOMINANCE = 8;
-export const GENERATION_LOOK_MAX = 2;
+/** Generation is the band: 0 fresh, 1 first merge, 2 elder. Never higher. */
+export const GENERATION_MAX = 2;
+export const GENERATION_ELDER = GENERATION_MAX;
 export const MAX_POINTERS = 2;
 
 export const PIXEL_RATIO_MOBILE = 1.5;
@@ -59,11 +61,27 @@ export function pixelRatioCap(): number {
   return Math.min(window.devicePixelRatio || 1, cap);
 }
 
-/** 0 = fresh, 1 = generation 2+ (same cap as the audio palettes). */
+export function clampGeneration(generation: number): number {
+  return Math.min(Math.max(Math.floor(generation), 0), GENERATION_MAX);
+}
+
+/** Merge child: one step older than the oldest parent, capped at elder. */
+export function nextGeneration(parentGens: Iterable<number>): number {
+  let gen = 0;
+  for (const g of parentGens) if (g > gen) gen = g;
+  return clampGeneration(gen + 1);
+}
+
+/** 0 at gen 0, 1 at elder. */
 export function generationT(generation: number): number {
-  return Math.min(Math.max(generation, 0), GENERATION_LOOK_MAX) / GENERATION_LOOK_MAX;
+  return clampGeneration(generation) / GENERATION_MAX;
 }
 
 export function generationSpeedMul(generation: number): number {
   return 1.42 - 0.94 * generationT(generation);
+}
+
+/** Elders cannot merge with each other; they can still merge with gen 0 or 1. */
+export function isElder(generation: number): boolean {
+  return clampGeneration(generation) >= GENERATION_ELDER;
 }

@@ -1,5 +1,5 @@
 import { Vector3 } from 'three';
-import { MIN_VERTS } from '../config';
+import { MIN_VERTS, isElder } from '../config';
 import type { Shape } from './Shape';
 import type { ActionKind } from './types';
 
@@ -49,6 +49,11 @@ export function collectIslands(pairs: Array<[Shape, Shape]>): Shape[][] {
   return [...groups.values()].filter((g) => g.length >= 2);
 }
 
+/** An island may merge unless every body in it is already elder (gen 2). */
+export function islandCanMerge(shapes: Shape[]): boolean {
+  return shapes.some((s) => !isElder(s.generation));
+}
+
 export function rollAction(shapes: Shape[], rng: () => number): ActionKind {
   let wMerge = 0;
   let wBounce = 0;
@@ -64,7 +69,7 @@ export function rollAction(shapes: Shape[], rng: () => number): ActionKind {
   wVertexLoss /= n;
   const sum = wMerge + wBounce + wVertexLoss || 1;
   const r = rng() * sum;
-  if (r < wMerge) return 'merge';
+  if (r < wMerge) return islandCanMerge(shapes) ? 'merge' : 'bounce';
   if (r < wMerge + wBounce) return 'bounce';
   return 'vertexLoss';
 }

@@ -15,8 +15,10 @@ import {
   GENERATION_DOMINANCE,
   MIN_VERTS,
   VANISH_SEC,
+  clampGeneration,
   generationSpeedMul,
   generationT,
+  nextGeneration,
 } from '../config';
 import { pointsToFlat } from './hull';
 import type { ShapeProps } from './types';
@@ -72,15 +74,15 @@ export class Shape {
     this.world = world;
     this.props = props;
     this.points = points.map((p) => p.clone());
-    this.generation = generation;
+    this.generation = clampGeneration(generation);
 
     const [r, g, b] = oklchToRgb(props.color.L, props.color.C, props.color.h);
     this.rgb.setRGB(r, g, b);
     this.emissive.copy(this.rgb);
 
-    const age = generationT(generation);
+    const age = generationT(this.generation);
     this.ageMul = 1 - 0.42 * age;
-    this.appearGlow = generation === 0 ? 1 : generation === 1 ? 0.28 : 0;
+    this.appearGlow = this.generation === 0 ? 1 : this.generation === 1 ? 0.28 : 0;
     this.fillMat = fillProto.clone();
     this.fillMat.color.copy(this.rgb).multiplyScalar(this.ageMul);
     this.fillMat.opacity = props.opacity;
@@ -178,13 +180,11 @@ export class Shape {
 
   inheritLineage(parents: Shape[]): void {
     let oldest = this.bornAt;
-    let gen = 0;
     for (const p of parents) {
       if (p.bornAt < oldest) oldest = p.bornAt;
-      if (p.generation > gen) gen = p.generation;
     }
     this.bornAt = oldest;
-    this.generation = gen + 1;
+    this.generation = nextGeneration(parents.map((p) => p.generation));
   }
 
   flash(allow: boolean): void {

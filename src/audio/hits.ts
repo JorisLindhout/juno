@@ -500,6 +500,7 @@ function mapHit(params: HitParams, lite: boolean): Mapped {
   return { family, sizeNorm, bright, hueMul, loud, echo, mass: Math.min(params.mass, 4), decayMul };
 }
 
+/** Hit palettes: 0 young, 1 mid, 2 elder. Same states as look and merge law. */
 function bandOf(generation: number): 0 | 1 | 2 {
   if (generation <= 0) return 0;
   if (generation === 1) return 1;

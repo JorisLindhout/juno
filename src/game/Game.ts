@@ -18,6 +18,7 @@ import {
   SPAWN_COOLDOWN_MS,
   isMobile,
   maxShapes,
+  nextGeneration,
   pixelRatioCap,
 } from '../config';
 import {
@@ -410,9 +411,7 @@ export class Game {
       angvel.z += a.z;
     }
     angvel.multiplyScalar(1 / alive.length);
-    let generation = 0;
-    for (const s of alive) if (s.generation > generation) generation = s.generation;
-    generation += 1;
+    const generation = nextGeneration(alive.map((s) => s.generation));
     applyGeneration(props, generation, linvel, angvel);
     for (const s of alive) this.despawn(s);
     const merged = new Shape(
