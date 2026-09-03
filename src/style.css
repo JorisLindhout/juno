@@ -10,6 +10,8 @@ body {
   height: 100%;
   overflow: hidden;
   background: #0c0c10;
+  color-scheme: dark;
+  font-family: Ojuju, ui-sans-serif, system-ui, sans-serif;
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
@@ -32,7 +34,6 @@ body {
   gap: 0.6rem;
   background: rgba(8, 8, 12, 0.5);
   color: #e8e6f0;
-  font-family: ui-sans-serif, system-ui, sans-serif;
   letter-spacing: 0.12em;
   cursor: pointer;
   z-index: 2;
@@ -42,11 +43,11 @@ body {
   display: none;
 }
 
-#gate .title {
+#gate h1 {
   margin: 0;
   font-size: 1.4rem;
   font-weight: 500;
-  text-transform: lowercase;
+  text-transform: uppercase;
 }
 
 #gate .hint {
