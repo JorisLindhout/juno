@@ -121,8 +121,8 @@ export class Stage {
     const idle = 1 - pour * 0.85;
     const idleX = Math.sin(this.idleT * 0.17) * 0.14 * idle;
     const idleY = Math.cos(this.idleT * 0.13) * 0.1 * idle;
-    const gx = Math.min(1.5, Math.max(-1.5, pourX));
-    const gy = Math.min(1.5, Math.max(-1.5, pourY));
+    const gx = Math.min(1.5, Math.max(-1.5, pourX)) * 0.48;
+    const gy = Math.min(1.5, Math.max(-1.5, pourY)) * 0.42;
     this.camera.position.x = gx * 1.25 + this.peekX * 0.5 + idleX;
     this.camera.position.y = gy * 1.1 + this.peekY * 0.4 + idleY;
     this.camera.position.z = CAMERA_Z;
@@ -163,8 +163,8 @@ export class Stage {
     this.walls.length = 0;
     const { halfW, halfH, halfD } = this.bounds;
     const t = WALL_THICKNESS;
-    const side = 0.52;
-    const floor = 0.78;
+    const side = 0.46;
+    const floor = 0.28;
     const walls: Array<[number, number, number, number, number, number, number]> = [
       [halfW + t, 0, 0, t, halfH + t, halfD + t, side],
       [-(halfW + t), 0, 0, t, halfH + t, halfD + t, side],

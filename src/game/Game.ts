@@ -8,6 +8,7 @@ import {
   FPS_LOW,
   GRAVITY,
   INITIAL_SHAPES,
+  SHAKE_VEL_GAIN,
   MIN_SHAPES,
   MIN_SPEED_FRAC,
   POINTER_RADIUS_FRAC,
@@ -106,8 +107,7 @@ export class Game {
   async unlock(): Promise<void> {
     if (this.unlocking) return;
     this.unlocking = true;
-    await this.gyro.unlock();
-    await this.hits.unlock();
+    await Promise.all([this.gyro.unlock(), this.hits.unlock()]);
     this.pointers.enabled = true;
   }
 
@@ -192,6 +192,7 @@ export class Game {
     this.world.gravity.y = g.y;
     this.world.gravity.z = g.z;
     this.stage.look(elapsed, g.x / GRAVITY, g.y / GRAVITY);
+    this.applyShake(elapsed);
 
     let steps = 0;
     while (this.acc >= this.dt && steps < 2) {
@@ -204,7 +205,7 @@ export class Game {
     const minSpeed = Math.min(this.stage.bounds.halfW, this.stage.bounds.halfH) * MIN_SPEED_FRAC;
     const halfD = this.stage.bounds.halfD;
     const calm = !this.gyro.jolting;
-    const driftXy = calm && Math.hypot(g.x, g.y) < GRAVITY * 0.16;
+    const driftXy = calm && Math.hypot(g.x, g.y) < GRAVITY * 0.28;
     for (const s of this.shapes) {
       if (calm) s.keepMoving(minSpeed, this.rng, driftXy);
       else s.body.wakeUp();
@@ -217,6 +218,22 @@ export class Game {
     this.stage.render();
     this.sampleFps(elapsed);
   };
+
+  private applyShake(dt: number): void {
+    if (!this.gyro.jolting) return;
+    const { x, y, z } = this.gyro.shake;
+    const s = dt * SHAKE_VEL_GAIN;
+    const cap = 16;
+    const dx = Math.min(cap, Math.max(-cap, x * s));
+    const dy = Math.min(cap, Math.max(-cap, y * s));
+    const dz = Math.min(cap, Math.max(-cap, z * s));
+    if (dx * dx + dy * dy + dz * dz < 1e-6) return;
+    for (const shape of this.shapes) {
+      const v = shape.body.linvel();
+      shape.body.wakeUp();
+      shape.body.setLinvel({ x: v.x + dx, y: v.y + dy, z: v.z + dz }, true);
+    }
+  }
 
   private handleEvents(now: number): void {
     const shapePairs: Array<[Shape, Shape]> = [];

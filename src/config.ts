@@ -29,7 +29,8 @@ export const PIXEL_RATIO_DESKTOP = 2;
 export const FPS_LOW = 40;
 export const FPS_HIGH = 55;
 
-export const GRAVITY = 7.4;
+export const GRAVITY = 22;
+export const SHAKE_VEL_GAIN = 9;
 export const CAMERA_FOV = 48;
 export const CAMERA_Z = 8;
 
