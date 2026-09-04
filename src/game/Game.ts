@@ -39,7 +39,6 @@ import type { Bounds } from './types';
 import {
   applyGeneration,
   averageVelocity,
-  centroidOf,
   hullFor,
   lerp,
   mergeProps,
@@ -317,7 +316,6 @@ export class Game {
     });
 
     const islands = collectIslands(shapePairs);
-    const toRemove = new Set<Shape>();
     const merges: Shape[][] = [];
     const bounceIslands: Shape[][] = [];
     const losses: Array<{ victim: Shape; toward: Vector3; island: Shape[] }> = [];
@@ -373,19 +371,12 @@ export class Game {
     }
 
     for (const island of merges) {
-      for (const s of island) toRemove.add(s);
-    }
-    for (const { victim } of losses) {
-      if (willDie(victim)) toRemove.add(victim);
-    }
-
-    for (const island of merges) {
-      this.applyMerge(island);
+      this.applyMerge(island, now);
     }
 
     for (const { victim, toward } of losses) {
-      if (toRemove.has(victim) && willDie(victim)) {
-        this.despawn(victim);
+      if (willDie(victim)) {
+        this.despawn(victim, { collapse: true });
         continue;
       }
       if (!canLoseVertex(victim)) continue;
@@ -396,12 +387,14 @@ export class Game {
     this.maybeEmit(spawnCandidates, now);
   }
 
-  private applyMerge(island: Shape[]): void {
+  private applyMerge(island: Shape[], now: number): void {
     const alive = island.filter((s) => this.shapes.includes(s));
     if (alive.length < 2) return;
+    const keeper = pickDominant(alive, now);
+    const others = alive.filter((s) => s !== keeper);
+    if (!others.length) return;
     const props = mergeProps(alive);
     props.size = clamp(props.size, this.sizeMin, this.sizeMax);
-    const position = centroidOf(alive);
     const linvel = averageVelocity(alive);
     const angvel = new Vector3();
     for (const s of alive) {
@@ -413,23 +406,11 @@ export class Game {
     angvel.multiplyScalar(1 / alive.length);
     const generation = nextGeneration(alive.map((s) => s.generation));
     applyGeneration(props, generation, linvel, angvel);
-    for (const s of alive) this.despawn(s);
-    const merged = new Shape(
-      this.world,
-      this.stage.scene,
-      props,
-      hullFor(props, this.rng),
-      position,
-      linvel,
-      angvel,
-      generation,
-    );
-    merged.setEnvIntensity(this.envOn ? 0.85 : 0);
-    merged.inheritLineage(alive);
-    merged.lock(performance.now(), COOLDOWN_MS);
-    merged.flash(this.flashes);
-    this.shapes.push(merged);
-    this.playHit(merged, { kind: 'merge', surface: 'shape', deeper: true });
+    keeper.absorb(props, alive, linvel, angvel);
+    for (const s of others) this.despawn(s, { toward: keeper });
+    keeper.lock(now, COOLDOWN_MS);
+    keeper.flash(this.flashes);
+    this.playHit(keeper, { kind: 'merge', surface: 'shape', deeper: true });
   }
 
   private maintainPopulation(): void {
@@ -510,11 +491,12 @@ export class Game {
     return this.poseUnoccupied(size);
   }
 
-  private despawn(shape: Shape): void {
+  private despawn(shape: Shape, opts?: { toward?: Shape; collapse?: boolean }): void {
     const i = this.shapes.indexOf(shape);
     if (i >= 0) this.shapes.splice(i, 1);
     else if (this.departing.includes(shape)) return;
-    shape.beginVanish();
+    if (opts?.collapse) shape.beginCollapse();
+    else shape.beginVanish(opts?.toward);
     this.departing.push(shape);
   }
 

@@ -9,7 +9,7 @@ import {
   type Scene,
 } from 'three';
 import { ConvexGeometry } from 'three/addons/geometries/ConvexGeometry.js';
-import { oklchToRgb } from '../color';
+import { lerpHueShort, oklchToRgb, type Oklch } from '../color';
 import {
   APPEAR_SEC,
   GENERATION_DOMINANCE,
@@ -20,7 +20,7 @@ import {
   generationT,
   nextGeneration,
 } from '../config';
-import { pointsToFlat } from './hull';
+import { fitHullCount, matchHull, pointsToFlat, spherePoints } from './hull';
 import type { ShapeProps } from './types';
 
 let nextId = 1;
@@ -50,6 +50,17 @@ export class Shape {
   private dropOrigin = new Vector3();
   private morphT = 0;
   private morphDuration = 0.25;
+  private morphMode: 'none' | 'vertex' | 'absorb' | 'collapse' = 'none';
+  private morphFromPts: Vector3[] = [];
+  private morphToPts: Vector3[] = [];
+  private morphDestPts: Vector3[] = [];
+  private morphFromColor: Oklch = { L: 0.7, C: 0.2, h: 0 };
+  private morphToColor: Oklch = { L: 0.7, C: 0.2, h: 0 };
+  private morphFromAge = 0;
+  private morphToAge = 0;
+  private morphFromOpacity = 1;
+  private morphToOpacity = 1;
+  private vanishToward: Shape | null = null;
   private fillMat: MeshStandardMaterial;
   private rgb = new Color();
   private emissive = new Color();
@@ -157,17 +168,93 @@ export class Shape {
     return this.appearing || this.disappearing || this.morphing || now < this.cooldownUntil;
   }
 
-  beginVanish(): void {
+  beginVanish(toward?: Shape): void {
     if (this.disappearing) return;
     this.appearing = false;
     this.disappearing = true;
     this.scaleFrom = this.mesh.scale.x;
     this.scaleT = 0;
+    this.vanishToward = toward ?? null;
     this.world.removeCollider(this.collider, false);
+    this.body.setGravityScale(0, true);
+    if (toward) {
+      const t = this.body.translation();
+      const g = toward.body.translation();
+      this.body.setLinvel({ x: (g.x - t.x) * 3.2, y: (g.y - t.y) * 3.2, z: (g.z - t.z) * 3.2 }, true);
+    } else {
+      this.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+    }
+  }
+
+  beginCollapse(): void {
+    if (this.disappearing) return;
+    if (this.points.length < 4) {
+      this.beginVanish();
+      return;
+    }
+    this.appearing = false;
+    this.disappearing = true;
+    this.morphing = true;
+    this.morphMode = 'collapse';
+    this.morphT = 0;
+    this.morphDuration = VANISH_SEC;
+    this.morphFromPts = this.points.map((p) => p.clone());
+    this.scaleT = 0;
+    this.world.removeCollider(this.collider, false);
+    this.body.setGravityScale(0, true);
+    this.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+  }
+
+  /** Keep this body; ease hull, color, and size toward the merged result. */
+  absorb(
+    props: ShapeProps,
+    parents: Shape[],
+    linvel: Vector3,
+    angvel: Vector3,
+  ): void {
+    const fromGen = this.generation;
+    this.appearing = false;
+    this.appearGlow = 0;
+    this.inheritLineage(parents);
+    this.morphFromColor = { ...this.props.color };
+    this.morphToColor = { ...props.color };
+    this.morphFromAge = generationT(fromGen);
+    this.morphToAge = generationT(this.generation);
+    this.morphFromOpacity = this.props.opacity;
+    this.morphToOpacity = props.opacity;
+
+    const fromSeed = this.points.length ? this.points : spherePoints(8, this.props.size);
+    const dest =
+      props.n === 0
+        ? spherePoints(Math.max(fromSeed.length, 8), props.size)
+        : fitHullCount(fromSeed, props.n, props.size);
+    this.morphDestPts = dest.map((p) => p.clone());
+    const count = Math.max(fromSeed.length, dest.length, 4);
+    const toPts = fitHullCount(dest, count, props.size);
+    const fromPts = matchHull(fitHullCount(fromSeed, count, this.props.size), toPts);
+    this.morphFromPts = fromPts;
+    this.morphToPts = toPts;
+    this.points = fromPts.map((p) => p.clone());
+    this.morphing = true;
+    this.morphMode = 'absorb';
+    this.morphT = 0;
+    this.morphDuration = VANISH_SEC;
+    this.dropped = null;
+
+    this.props = props;
+    this.body.setLinearDamping(props.linDamp);
+    this.body.setAngularDamping(props.angDamp);
+    this.body.setGravityScale(props.gravityScale, true);
+    this.body.setLinvel({ x: linvel.x, y: linvel.y, z: linvel.z }, true);
+    this.body.setAngvel({ x: angvel.x, y: angvel.y, z: angvel.z }, true);
+    this.rebuildColliderFromPoints(props.n === 0 ? [] : this.morphDestPts);
+    this.rebuildRenderGeometry();
   }
 
   vanished(): boolean {
-    return this.disappearing && this.scaleT >= 1;
+    if (!this.disappearing) return false;
+    if (this.morphMode === 'collapse') return this.morphT >= 1;
+    return this.scaleT >= 1;
   }
 
   lock(now: number, ms: number): void {
@@ -223,22 +310,27 @@ export class Shape {
       scale = easeOutCubic(u);
       this.appearGlow *= Math.max(0, 1 - dt * 1.6);
       if (u >= 1) this.appearing = false;
-    } else if (this.disappearing) {
+    } else if (this.disappearing && this.morphMode !== 'collapse') {
       this.scaleT += dt / VANISH_SEC;
       const u = Math.min(this.scaleT, 1);
       const k = easeInCubic(u);
       scale = this.scaleFrom * (1 - k);
       this.fillMat.opacity = this.props.opacity * (1 - k);
+      this.pullToward(dt);
     }
     if (!this.disappearing) scale *= 1 + this.pulse * 0.14;
     this.mesh.scale.setScalar(scale);
-    if (this.morphing && this.dropped) {
+    if (this.morphMode === 'vertex' && this.dropped) {
       this.morphT += dt / this.morphDuration;
       const u = Math.min(this.morphT, 1);
       const ease = 1 - (1 - u) * (1 - u);
       this.dropped.copy(this.dropOrigin).multiplyScalar(1 - ease * 0.88);
       this.rebuildRenderGeometry();
-      if (u >= 1) this.finishMorph();
+      if (u >= 1) this.finishVertexMorph();
+    } else if (this.morphMode === 'absorb') {
+      this.stepAbsorb(dt);
+    } else if (this.morphMode === 'collapse') {
+      this.stepCollapse(dt);
     }
     if (!allowFlash) {
       this.fillMat.emissiveIntensity = 0;
@@ -271,6 +363,7 @@ export class Shape {
     this.dropped = this.points[best];
     this.dropOrigin.copy(this.points[best]);
     this.morphing = true;
+    this.morphMode = 'vertex';
     this.morphT = 0;
     this.morphDuration = Math.max(this.props.elasticity, 0.08);
     this.rebuildColliderFromPoints(this.points.filter((_, i) => i !== best));
@@ -284,19 +377,94 @@ export class Shape {
     this.world.removeRigidBody(this.body);
   }
 
-  private finishMorph(): void {
+  private pullToward(dt: number): void {
+    if (!this.vanishToward) return;
+    const g = this.vanishToward.body.translation();
+    const t = this.body.translation();
+    const k = Math.min(1, 10 * dt);
+    this.body.setTranslation(
+      { x: t.x + (g.x - t.x) * k, y: t.y + (g.y - t.y) * k, z: t.z + (g.z - t.z) * k },
+      true,
+    );
+  }
+
+  private stepAbsorb(dt: number): void {
+    this.morphT += dt / this.morphDuration;
+    const u = Math.min(this.morphT, 1);
+    const ease = 1 - (1 - u) * (1 - u);
+    for (let i = 0; i < this.points.length; i++) {
+      this.points[i].lerpVectors(this.morphFromPts[i], this.morphToPts[i], ease);
+    }
+    const L = this.morphFromColor.L + (this.morphToColor.L - this.morphFromColor.L) * ease;
+    const C = this.morphFromColor.C + (this.morphToColor.C - this.morphFromColor.C) * ease;
+    const h = lerpHueShort(this.morphFromColor.h, this.morphToColor.h, ease);
+    this.props.color.L = L;
+    this.props.color.C = C;
+    this.props.color.h = h;
+    this.props.opacity =
+      this.morphFromOpacity + (this.morphToOpacity - this.morphFromOpacity) * ease;
+    const [r, g, b] = oklchToRgb(L, C, h);
+    this.rgb.setRGB(r, g, b);
+    this.emissive.copy(this.rgb);
+    const age = this.morphFromAge + (this.morphToAge - this.morphFromAge) * ease;
+    this.ageMul = 1 - 0.42 * age;
+    this.fillMat.metalness = 0.36 - 0.32 * age;
+    this.fillMat.roughness = 0.16 + 0.58 * age;
+    this.rebuildRenderGeometry();
+    if (u >= 1) this.finishAbsorb();
+  }
+
+  private stepCollapse(dt: number): void {
+    this.morphT += dt / this.morphDuration;
+    const u = Math.min(this.morphT, 1);
+    const ease = easeInCubic(u);
+    for (let i = 0; i < this.points.length; i++) {
+      this.points[i].copy(this.morphFromPts[i]).multiplyScalar(Math.max(0.08, 1 - ease));
+    }
+    this.mesh.scale.setScalar(Math.max(0, 1 - ease));
+    this.fillMat.opacity = this.props.opacity * (u < 0.55 ? 1 : 1 - (u - 0.55) / 0.45);
+    if (ease < 0.97) this.rebuildRenderGeometry();
+  }
+
+  private finishVertexMorph(): void {
     if (!this.dropped) {
       this.morphing = false;
+      this.morphMode = 'none';
       return;
     }
     this.points = this.points.filter((p) => p !== this.dropped);
     this.props.n = this.points.length;
     this.dropped = null;
     this.morphing = false;
+    this.morphMode = 'none';
+    this.rebuildRenderGeometry();
+  }
+
+  private finishAbsorb(): void {
+    if (this.props.n === 0) this.points = [];
+    else this.points = this.morphDestPts.map((p) => p.clone());
+    this.morphFromPts = [];
+    this.morphToPts = [];
+    this.morphDestPts = [];
+    this.morphing = false;
+    this.morphMode = 'none';
+    const age = generationT(this.generation);
+    this.ageMul = 1 - 0.42 * age;
+    this.fillMat.metalness = 0.36 - 0.32 * age;
+    this.fillMat.roughness = 0.16 + 0.58 * age;
+    const [r, g, b] = oklchToRgb(this.props.color.L, this.props.color.C, this.props.color.h);
+    this.rgb.setRGB(r, g, b);
+    this.emissive.copy(this.rgb);
     this.rebuildRenderGeometry();
   }
 
   private makeGeometry() {
+    if (
+      (this.morphMode === 'absorb' || this.morphMode === 'collapse') &&
+      this.points.length >= 4
+    ) {
+      return new ConvexGeometry(this.points.map((p) => p.clone()));
+    }
     if (this.props.n === 0 || this.points.length < 4) {
       return new SphereGeometry(this.props.size, 24, 16);
     }
@@ -304,9 +472,13 @@ export class Shape {
   }
 
   private rebuildRenderGeometry(): void {
-    const next = this.makeGeometry();
-    this.mesh.geometry.dispose();
-    this.mesh.geometry = next;
+    try {
+      const next = this.makeGeometry();
+      this.mesh.geometry.dispose();
+      this.mesh.geometry = next;
+    } catch {
+      /* ConvexHull can fail on a degenerate collapse frame. */
+    }
   }
 
   private makeColliderDesc() {
